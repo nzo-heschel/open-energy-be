@@ -1,110 +1,103 @@
+# app/api/v1/energy_mix.py
 import io
+import os
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from datetime import datetime
 from app.services.noga_service import NogaService
 from app.services.energy_mix_processor import EnergyMixProcessor
+from app.utils.date_utils import resolve_date_range, to_iso_date, to_noga_date
+from app.utils.response_formatter import flatten_level2, format_categories
 
 router = APIRouter()
+NOGA_TOKEN = os.getenv("NOGA_API_TOKEN", "7b397cafa75b4a00848542829a588dac")
 
 # Helper function to calculate hourly average (last hour data)
-def calculate_hourly_average(data):
+def calculate_hourly_average(records):
     """
-    Sum all values from the last hour and divide by 12.
-    The data input is expected to be hourly production values for the last 12 hours.
+    Average total production over the last hour (last 12 samples).
+    Expects a list of flattened NOGA records.
     """
-    total_production = sum(data)
-    hourly_average = total_production / 12  # Average for the last hour
-    return hourly_average
+    if not records:
+        return 0
+
+    last_samples = records[-12:]
+    totals = []
+    for sample in last_samples:
+        total = sum(
+            value
+            for key, value in sample.items()
+            if key not in ("date", "time") and isinstance(value, (int, float))
+        )
+        totals.append(total)
+
+    return sum(totals) / len(totals) if totals else 0
 
 # -------------------------------------------------------------------
-# 1️⃣ GET ENERGY MIX (MAIN ENDPOINT FOR FRONTEND PIE CHART)
+# GET ENERGY MIX (MAIN ENDPOINT FOR FRONTEND PIE CHART)
 # -------------------------------------------------------------------
 @router.get("/production-mix")
 async def get_energy_production_mix(
-    filter: str = "this_year",
     start_date: str = None,
     end_date: str = None
 ):
     today = datetime.now()
 
-    # --- Determine date range ---
-    if filter == "today":
-        start = today
-        end = today
-    elif filter == "this_month":
-        start = today.replace(day=1)
-        end = today
-    elif filter == "this_year":
-        start = today.replace(month=1, day=1)
-        end = today
-    elif filter == "this_decade":
-        start = today.replace(year=today.year - 10, month=1, day=1)
-        end = today
-    elif filter == "between_dates":
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
+    # Determine date range (default: start of year to today)
+    if start_date and end_date:
+        start_dt, end_dt = resolve_date_range(start_date, end_date)
     else:
-        start = today.replace(month=1, day=1)
-        end = today
+        start_dt, end_dt = today.replace(month=1, day=1), today
 
-    # --- Fetch REAL data from NOGA ---
-    raw_data = await NogaService.get_production_mix(start, end)
+    try:
+        raw_data = await NogaService.fetch_production_mix(
+            to_noga_date(start_dt),
+            to_noga_date(end_dt),
+            NOGA_TOKEN,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch production mix: {exc}")
 
-    # Assuming `raw_data` is a dictionary containing hourly data for energy production (mocked as 'hourly_data')
-    hourly_data = raw_data.get('hourly_data', [])  # Example: ['coal', 'natural_gas', 'solar', ...]
-
-    # --- Calculate hourly average ---
-    if hourly_data:
-        hourly_average = calculate_hourly_average(hourly_data)
-    else:
-        hourly_average = 0
-
-    # --- Convert → categories + percentages ---
+    hourly_average = calculate_hourly_average(raw_data)
     result = EnergyMixProcessor.aggregate(raw_data)
+    categories = format_categories(flatten_level2(result["level2"]))
 
-    # Add the hourly average to the result
-    result["hourly_average"] = hourly_average
-
-    return result
+    return {
+        "start_date": to_iso_date(start_dt),
+        "end_date": to_iso_date(end_dt),
+        "hourly_average": hourly_average,
+        "categories": categories,
+    }
 
 
 # -------------------------------------------------------------------
-# 2️⃣ EXPORT TO EXCEL
+# EXPORT TO EXCEL
 # -------------------------------------------------------------------
 @router.get("/production-mix/export")
 async def export_energy_mix_to_excel(
-    filter: str = "this_year",
     start_date: str = None,
     end_date: str = None
 ):
     today = datetime.now()
 
-    # --- Determine date range ---
-    if filter == "today":
-        start = today
-        end = today
-    elif filter == "this_month":
-        start = today.replace(day=1)
-        end = today
-    elif filter == "this_year":
-        start = today.replace(month=1, day=1)
-        end = today
-    elif filter == "this_decade":
-        start = today.replace(year=today.year - 10, month=1, day=1)
-        end = today
-    elif filter == "between_dates":
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
+    # Determine date range (default: start of year to today)
+    if start_date and end_date:
+        start_dt, end_dt = resolve_date_range(start_date, end_date)
     else:
-        start = today.replace(month=1, day=1)
-        end = today
+        start_dt, end_dt = today.replace(month=1, day=1), today
 
-    # --- Fetch REAL data ---
-    raw_data = await NogaService.get_production_mix(start, end)
+    # Fetch REAL data
+    try:
+        raw_data = await NogaService.fetch_production_mix(
+            to_noga_date(start_dt),
+            to_noga_date(end_dt),
+            NOGA_TOKEN,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch production mix: {exc}")
 
-    # --- Process the raw data ---
+    # Process the raw data
     result = EnergyMixProcessor.aggregate(raw_data)
 
     # --- Create Excel File ---
@@ -131,7 +124,7 @@ async def export_energy_mix_to_excel(
         df_level2.to_excel(writer, sheet_name="Detailed", index=False)
 
     excel_buffer.seek(0)
-    filename = f"energy_production_mix_{filter}.xlsx"
+    filename = "energy_production_mix.xlsx"
 
     return StreamingResponse(
         excel_buffer,

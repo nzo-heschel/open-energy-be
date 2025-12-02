@@ -1,240 +1,122 @@
-# 🌍 Open Energy Backend — FastAPI Service  
+# 🌍 Open Energy Backend — FastAPI Service
 ### Electricity Production Mix API (Israel NOGA Integration)
 
-This backend fetches, aggregates, and exposes Israel’s electricity production mix using real-time and historical data from the **NOGA ISO API**.  
-It includes hourly averaging, multi-level categorization, UI-friendly endpoints, and CSV/Excel export.
+This backend application fetches, processes, and provides real-time and historical data about Israel’s electricity production mix. It is an API (Application Programming Interface), which means it provides data to other applications.
 
 ---
 
-## 📁 Project Structure
+## 🚀 Key Features
 
-```
-app/
-│
-├── api/
-│   └── v1/
-│       ├── energy.py
-│       ├── energy_mix.py
-│       └── energy_ui.py
-│
-├── main.py
-│
-├── services/
-│   ├── energy_mix_processor.py
-│   ├── energy_mix_service.py
-│   ├── energy_processor.py
-│   ├── energy_service.py
-│   ├── noga_mock_service.py
-│   ├── noga_service.py
-│   └── user_service.py
-│
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-└── README.md
-```
+*   **Real-time Data:** Fetches the most up-to-date electricity production data.
+*   **Historical Data:** Access historical data for different time periods.
+*   **Data Aggregation:** Summarizes the data into easy-to-understand categories.
+*   **Export Data:** Allows you to download the data in CSV or Excel formats.
 
 ---
 
-# 🚀 Features
+## 🏁 Getting Started
 
-- Fetch real-time + historical NOGA production mix data  
-- Hourly averaging from 5-minute intervals  
-- Level-1 (Renewables / Non-renewables / Others)  
-- Level-2 detailed categories (coal, gas, solar, wind, etc.)  
-- Export to CSV + Excel  
-- Frontend-optimized UI API 
+Follow these steps to get the application running on your computer.
 
----
+### 1. Prerequisites
 
-# 🔧 Installation
+Before you start, make sure you have the following software installed on your computer:
 
-### 1. Clone & Enter Project
-```bash
-git clone <your-repo-url>
-cd open-energy-be
-```
+*   **Python:** A programming language needed to run the application. You can download it from [python.org](https://www.python.org/downloads/).
 
-### 2. Create Virtual Environment
+### 2. Setup
+
+This will guide you through setting up the project on your computer.
+
+**a. Open a Terminal (Command Prompt)**
+
+*   **Windows:** Press the `Windows Key`, type `cmd`, and press `Enter`.
+*   **macOS:** Open `Finder`, go to `Applications` -> `Utilities`, and open `Terminal`.
+*   **Linux:** Usually `Ctrl+Alt+T` opens the terminal.
+
+**b. Create a Virtual Environment**
+
+This creates an isolated environment for the project's dependencies. Make sure you are in the project's root directory.
+
 ```bash
 python -m venv venv
-source venv/bin/activate      # Linux/Mac
-venv\Scripts\activate         # Windows
 ```
 
-### 3. Install Dependencies
+**c. Activate the Virtual Environment**
+
+*   **Windows:**
+    ```bash
+    venv\Scripts\activate
+    ```
+*   **macOS and Linux:**
+    ```bash
+    source venv/bin/activate
+    ```
+    Your terminal prompt should now have `(venv)` at the beginning.
+
+**d. Install the Required Packages**
+
+This will install all the necessary libraries for the project.
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Run the Server
+### 3. Run the Application
+
+Now that the setup is complete, you can start the application.
+
 ```bash
 uvicorn app.main:app --reload
 ```
 
-### API Docs  
-- http://localhost:8000/docs  
-- http://localhost:8000/redoc  
+You should see a message indicating that the application is running, like this:
+`INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)`
+
+This means your API is running and ready to be used!
 
 ---
 
-# 🐳 Docker Setup
+## 📡 How to Use the API
 
-```bash
-docker-compose up --build
-```
+The application provides several URLs (we call them "endpoints") that you can access to get data. You can test these endpoints in two main ways:
 
-API → http://localhost:8000
+### 1. Interactive API Documentation (Recommended)
 
----
+The easiest way to explore and test the API is by using the built-in documentation. Once the application is running, open one of the following links in your web browser:
 
-# 📡 API Endpoints
+*   **Swagger UI:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+*   **ReDoc:** [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
 
----
+These interfaces allow you to see all the available endpoints and try them out directly from your browser.
 
-# 1️⃣ `/energy` — Core Production Mix API
+### 2. Using an API Client (like Postman)
 
-## **GET `/energy/production-mix`**
-
-Returns aggregated energy mix with hourly averaging.
-
-### Query Parameters
-| Name | Default | Options |
-|------|---------|---------|
-| filter | `year` | `day`, `month`, `year`, `decade` |
-
-### Example Response
-```json
-{
-  "filter": "year",
-  "start_date": "01-01-2024",
-  "end_date": "28-11-2024",
-  "level1": {
-    "Non-renewables": 1293923.5,
-    "Renewables": 328493.2,
-    "Other": 238493.9
-  },
-  "level2": {
-    "Non-renewables": {
-      "coal": 390000,
-      "natural_Gas": 823000,
-      "diesel": 823.45
-    },
-    "Renewables": {
-      "photoVoltaic": 103942,
-      "biogas": 12438,
-      "wind": 9240,
-      "solar_thermal": 3829,
-      "pv_storage": 2343
-    },
-    "Other": {
-      "other": 9493,
-      "pumped_storage": 29393
-    }
-  },
-  "tooltip": "The pie chart shows Israel’s electricity generation mix..."
-}
-```
+For more advanced testing, you can use an API client like [Postman](https://www.postman.com/downloads/). You can copy and paste the URLs from the list below into Postman to test them.
 
 ---
 
-## **GET `/energy/production-mix/export`**
+## 📋 List of API Endpoints
 
-Exports Level-1 production mix as **CSV**.
+Here are some of the main endpoints you can use. You can specify a date range by adding `start_date` and `end_date` to the URL.
 
----
+*   **Get Production Mix**
+    *   `http://127.0.0.1:8000/api/v1/energy/production-mix?start_date=2023-01-01&end_date=2023-12-31`
 
-# 2️⃣ `/production-mix/ui` — UI-Optimized Endpoint
+*   **Export Production Mix to CSV**
+    *   `http://127.0.0.1:8000/api/v1/energy/production-mix/export?start_date=2023-01-01&end_date=2023-12-31`
 
-### GET `/production-mix/ui`
+*   **Get Energy Overview**
+    *   `http://127.0.0.1:8000/api/v1/energy/overview?start_date=2023-01-01&end_date=2023-12-31`
 
-Returns color-coded Level-1 & Level-2 breakdown for frontend pie charts.
+*   **Get Energy Overview Details**
+    *   `http://127.0.0.1:8000/api/v1/energy/overview/details?start_date=2023-01-01&end_date=2023-12-31`
 
-```json
-{
-  "level1": { "Renewables": 23422, "Non-renewables": 98322, "Other": 3920 },
-  "level2": {
-    "Renewables": [
-      { "name": "photoVoltaic", "value": 19200, "color": "#FFD700" }
-    ]
-  },
-  "percentages": { "Renewables": 18.3, "Non-renewables": 77.2 },
-  "total_production": 121544
-}
-```
+*   **Export Energy Overview to Excel**
+    *   `http://127.0.0.1:8000/api/v1/energy/overview/export?start_date=2023-01-01&end_date=2023-12-31`
 
----
+*   **Get SMP Data**
+    *   `http://127.0.0.1:8000/api/v1/energy/smp/?start_date=2023-01-01&end_date=2023-12-31`
 
-# 3️⃣ `/energy-mix` — Excel Export & Alternative Aggregation
-
-### **GET `/production-mix`**
-
-Supported filters:
-
-- today  
-- this_month  
-- this_year  
-- this_decade  
-- between_dates  
-
-Includes:
-
-- hourly average  
-- level-1 & level-2  
-- percentages  
-- totals  
-
----
-
-## **GET `/production-mix/export`**
-
-Exports detailed production mix as **Excel (.xlsx)** with:
-
-### Sheet 1 → Summary  
-| Category | Production | Percentage |
-
-### Sheet 2 → Detailed  
-| Category | Subcategory | Production | Percentage |
-
----
-
-# 🔌 Services
-
-### **NogaService**
-- Handles POST requests to NOGA ISO API  
-- Flattens nested data  
-- Provides:
-  - `fetch_production_mix()`
-  - `aggregate_energy()`
-
-### **EnergyMixProcessor**
-- Aggregates raw NOGA data  
-- Produces Level-1, Level-2, percentages, totals  
-
-### **Energy UI Processor**
-- Adds color palette  
-- Formats breakdown for pie charts  
-
----
-
-# ⚙ Environment Variables (optional)
-
-| Variable | Description |
-|----------|-------------|
-| `NOGA_TOKEN` | API key for NOGA |
-
----
-
-# 📦 Requirements
-```
-fastapi
-uvicorn
-sqlalchemy
-pydantic
-python-dotenv
-passlib[bcrypt]
-jose
-alembic
-```
-
----
+*   **Get SMP Production vs Marginal Price**
+    *   `http://127.0.0.1:8000/api/v1/energy/smp-production-vs-marginal-price/?start_date=2023-01-01&end_date=2023-01-31`

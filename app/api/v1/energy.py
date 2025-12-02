@@ -1,47 +1,20 @@
-from fastapi import APIRouter, HTTPException, Query
+# app/api/v1/energy.py
+import os
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from datetime import datetime, timedelta
 from io import StringIO
 import csv
 from typing import Dict
 from app.services.noga_service import NogaService
+from app.utils.date_utils import resolve_date_range, to_iso_date, to_noga_date
+from app.utils.response_formatter import flatten_level2, format_categories
 
 router = APIRouter(prefix="/energy", tags=["Energy"])
-
-# --------------------------
-# Time filter logic
-# --------------------------
-def resolve_dates(filter: str):
-    today = datetime.today()
-
-    if filter == "day":
-        start = end = today.strftime("%d-%m-%Y")
-
-    elif filter == "month":
-        start = today.replace(day=1).strftime("%d-%m-%Y")
-        end = today.strftime("%d-%m-%Y")
-
-    elif filter == "year":
-        start = today.replace(month=1, day=1).strftime("%d-%m-%Y")
-        end = today.strftime("%d-%m-%Y")
-
-    elif filter == "decade":
-        start = today.replace(year=today.year - 10).strftime("%d-%m-%Y")
-        end = today.strftime("%d-%m-%Y")
-
-    elif filter == "between":
-        raise HTTPException(status_code=400, detail="Use /energy/production-mix/range")
-
-    else:
-        # default → last year
-        start = today.replace(year=today.year - 1).strftime("%d-%m-%Y")
-        end = today.strftime("%d-%m-%Y")
-
-    return start, end
+NOGA_TOKEN = os.getenv("NOGA_API_TOKEN", "7b397cafa75b4a00848542829a588dac")
 
 
 # --------------------------
-# HOURLY AVERAGING (5-min → hourly)
+# HOURLY AVERAGING (5-min to hourly)
 # --------------------------
 def hourly_average(values):
     """
@@ -61,7 +34,7 @@ def hourly_average(values):
         for key in items[0].keys():
             if key in ["date", "time"]:
                 continue
-            avg_entry[key] = sum(i.get(key, 0) for i in items) / 12  # average of 12 × 5 min
+            avg_entry[key] = sum(i.get(key, 0) for i in items) / 12  # average of 12 x 5 min
 
         hourly.append(avg_entry)
 
@@ -72,17 +45,22 @@ def hourly_average(values):
 # MAIN ENDPOINT
 # --------------------------
 @router.get("/production-mix")
-async def get_production_mix(filter: str = Query("year")) -> Dict:
+async def get_production_mix(
+    start_date: str = None,
+    end_date: str = None
+) -> Dict:
     """
     Returns Israel's electricity production mix (aggregated).
     """
 
-    start, end = resolve_dates(filter)
-
-    token = "7b397cafa75b4a00848542829a588dac"
+    start_dt, end_dt = resolve_date_range(start_date, end_date)
 
     try:
-        raw_values = await NogaService.fetch_production_mix(start, end, token)
+        raw_values = await NogaService.fetch_production_mix(
+            to_noga_date(start_dt),
+            to_noga_date(end_dt),
+            NOGA_TOKEN,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -90,8 +68,6 @@ async def get_production_mix(filter: str = Query("year")) -> Dict:
     hourly_values = hourly_average(raw_values)
 
     # Step 2: category aggregation
-    aggregated = NogaService.aggregate_energy(hourly_values)
-
     # Step 3: level 2 details
     level2 = {
         "Non-renewables": {
@@ -112,17 +88,17 @@ async def get_production_mix(filter: str = Query("year")) -> Dict:
         }
     }
 
+    categories = format_categories(flatten_level2(level2))
+
     return {
-        "filter": filter,
-        "start_date": start,
-        "end_date": end,
-        "level1": aggregated,
-        "level2": level2,
+        "start_date": to_iso_date(start_dt),
+        "end_date": to_iso_date(end_dt),
+        "categories": categories,
         "tooltip": (
-            "The pie chart shows Israel’s electricity generation mix and illustrates "
+            "The pie chart shows Israel's electricity generation mix and illustrates "
             "the different energy sources. The data are updated hourly and are based "
             "on real-time figures from the NOGA system operator."
-        )
+        ),
     }
 
 
@@ -130,12 +106,18 @@ async def get_production_mix(filter: str = Query("year")) -> Dict:
 # EXPORT TO EXCEL (CSV)
 # ----------------------------------------------------------
 @router.get("/production-mix/export")
-async def export_energy_mix(filter: str = Query("year")):
+async def export_energy_mix(
+    start_date: str = None,
+    end_date: str = None
+):
 
-    start, end = resolve_dates(filter)
-    token = "7b397cafa75b4a00848542829a588dac"
+    start_dt, end_dt = resolve_date_range(start_date, end_date)
 
-    raw_values = await NogaService.fetch_production_mix(start, end, token)
+    raw_values = await NogaService.fetch_production_mix(
+        to_noga_date(start_dt),
+        to_noga_date(end_dt),
+        NOGA_TOKEN,
+    )
     hourly_values = hourly_average(raw_values)
     aggregated = NogaService.aggregate_energy(hourly_values)
 
@@ -147,7 +129,7 @@ async def export_energy_mix(filter: str = Query("year")):
         writer.writerow([k, v])
 
     output.seek(0)
-    file_name = f"production_mix_{filter}.csv"
+    file_name = "production_mix.csv"
 
     return StreamingResponse(
         output,

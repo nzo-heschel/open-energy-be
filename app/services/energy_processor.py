@@ -1,3 +1,4 @@
+# app/services/energy_processor.py
 class EnergyProcessor:
 
     @staticmethod

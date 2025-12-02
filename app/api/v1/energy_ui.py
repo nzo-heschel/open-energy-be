@@ -1,3 +1,4 @@
+# app/api/v1/energy_ui.py
 from fastapi import APIRouter
 from app.services.energy_mix_processor import EnergyMixProcessor
 from app.services.noga_service import NogaService
@@ -20,17 +21,17 @@ COLOR_PALETTE = {
 }
 
 @router.get("/production-mix/ui")
-async def get_energy_mix_ui(filter: str = "today"):
+async def get_energy_mix_ui(
+    start_date: str = None,
+    end_date: str = None
+):
     from datetime import datetime
 
     # Parse dates same as energy.py
     now = datetime.now()
-    if filter == "today":
-        start = datetime(now.year, now.month, now.day)
-        end = start + timedelta(days=1)
-    elif filter == "this_year":
-        start = datetime(now.year, 1, 1)
-        end = datetime(now.year + 1, 1, 1)
+    if start_date and end_date:
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
     else:
         start = datetime(now.year, now.month, now.day)
         end = start + timedelta(days=1)
