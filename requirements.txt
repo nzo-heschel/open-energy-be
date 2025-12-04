@@ -6,3 +6,5 @@ python-dotenv
 passlib[bcrypt]
 jose
 alembic
+httpx
+pandas

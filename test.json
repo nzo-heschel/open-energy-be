@@ -1,0 +1,103 @@
+{
+    "start_date": "2022-11-01",
+    "end_date": "2022-11-30",
+    "unit": "count",
+    "labels": {
+        "month": "Month",
+        "total_consumers": "Total Consumers",
+        "new_additions": "New Additions"
+    },
+    "data": [
+        {
+            "month": "2022-11",
+            "total_consumers": 4137,
+            "new_additions": 397
+        },
+        {
+            "month": "2022-12",
+            "total_consumers": 4448,
+            "new_additions": 311
+        }
+    ],
+    "segments": {
+        "location": [
+            {
+                "month": "2022-11",
+                "location": "existing_regulation",
+                "total_consumers": 2659,
+                "new_additions": 241
+            },
+            {
+                "month": "2022-12",
+                "location": "existing_regulation",
+                "total_consumers": 2864,
+                "new_additions": 205
+            },
+            {
+                "month": "2022-11",
+                "location": "competitive_supply",
+                "total_consumers": 1478,
+                "new_additions": 156
+            },
+            {
+                "month": "2022-12",
+                "location": "competitive_supply",
+                "total_consumers": 1584,
+                "new_additions": 106
+            }
+        ],
+        "sector": [
+            {
+                "month": "2022-11",
+                "sector": "residential",
+                "total_consumers": 614,
+                "new_additions": 139
+            },
+            {
+                "month": "2022-12",
+                "sector": "residential",
+                "total_consumers": 712,
+                "new_additions": 98
+            },
+            {
+                "month": "2022-11",
+                "sector": "non_residential",
+                "total_consumers": 3523,
+                "new_additions": 258
+            },
+            {
+                "month": "2022-12",
+                "sector": "non_residential",
+                "total_consumers": 3736,
+                "new_additions": 213
+            }
+        ],
+        "meter_type": [
+            {
+                "month": "2022-11",
+                "meter_type": "virtual_suppliers",
+                "total_consumers": 1478,
+                "new_additions": 156
+            },
+            {
+                "month": "2022-12",
+                "meter_type": "virtual_suppliers",
+                "total_consumers": 1584,
+                "new_additions": 106
+            },
+            {
+                "month": "2022-11",
+                "meter_type": "suppliers_with_generation",
+                "total_consumers": 2659,
+                "new_additions": 241
+            },
+            {
+                "month": "2022-12",
+                "meter_type": "suppliers_with_generation",
+                "total_consumers": 2864,
+                "new_additions": 205
+            }
+        ]
+    },
+    "note": "Data clipped to requested end_date."
+}

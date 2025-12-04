@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 
 # Accepted input formats for query parameters.
-ACCEPTED_FORMATS = ("%Y-%m-%d", "%d-%m-%Y")
+ACCEPTED_FORMATS = ("%Y-%m-%d", "%d-%m-%Y", "%m-%Y")
 
 
 def parse_date(value: str) -> datetime:
@@ -12,7 +12,11 @@ def parse_date(value: str) -> datetime:
     """
     for fmt in ACCEPTED_FORMATS:
         try:
-            return datetime.strptime(value, fmt)
+            dt = datetime.strptime(value, fmt)
+            # If only month/year provided, normalize to first of month.
+            if fmt == "%m-%Y":
+                dt = dt.replace(day=1)
+            return dt
         except ValueError:
             continue
     raise HTTPException(

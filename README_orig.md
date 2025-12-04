@@ -120,3 +120,9 @@ Here are some of the main endpoints you can use. You can specify a date range by
 
 *   **Get SMP Production vs Marginal Price**
     *   `http://127.0.0.1:8000/api/v1/energy/smp-production-vs-marginal-price/?start_date=2023-01-01&end_date=2023-01-31`
+
+*   **Get Private supplier**
+    *   'http://127.0.0.1:8000/api/v1/private-supplier-connected-consumers/?start_date=10-2022&end_date=11-2023'
+
+
+
