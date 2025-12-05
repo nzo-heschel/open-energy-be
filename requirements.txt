@@ -8,3 +8,7 @@ jose
 alembic
 httpx
 pandas
+openpyxl
+curl-cffi
+requests
+python-multipart

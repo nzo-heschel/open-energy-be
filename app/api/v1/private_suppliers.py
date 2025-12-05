@@ -1,9 +1,8 @@
-import os
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.services.private_suppliers_service import PrivateSuppliersService, DEFAULT_CSV_PATH
+from app.services.data_file_manager import ensure_fresh_data_file
+from app.services.private_suppliers_service import PrivateSuppliersService
 
 router = APIRouter(prefix="/private-supplier-connected-consumers", tags=["Private Suppliers' Consumers"])
 
@@ -21,7 +20,7 @@ async def get_private_suppliers(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load private suppliers data: {exc}")
+        raise HTTPException(status_code=424, detail=f"Failed to load private suppliers data: {exc}")
 
 
 @router.get("/export")
@@ -36,7 +35,7 @@ async def export_private_suppliers(
         payload = PrivateSuppliersService.get_data(start_date, end_date)
         contents = PrivateSuppliersService.to_excel(payload)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to export data: {exc}")
+        raise HTTPException(status_code=424, detail=f"Failed to export data: {exc}")
 
     filename = "private_suppliers_consumers.xlsx"
     return StreamingResponse(
@@ -51,7 +50,11 @@ async def download_source_file():
     """
     Pass-through download of the current master CSV file.
     """
-    csv_path = DEFAULT_CSV_PATH
+    try:
+        csv_path = ensure_fresh_data_file("niyud")
+    except HTTPException:
+        raise
+
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail="Source file not found.")
     return FileResponse(

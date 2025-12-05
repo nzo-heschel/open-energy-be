@@ -1,60 +1,226 @@
 # app/services/smp_processor.py
-from typing import Dict, List
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List, Optional
+
+
+# Broadened key detection to better match NOGA SMP payloads.
+PRICE_WITH_CONSTRAINT_KEYS = [
+    "priceWithConstraints",
+    "price_with_constraints",
+    "pricewithconstraints",
+    "marginalPriceWithConstraints",
+    "marginalpricewithconstraints",
+    "smpWithConstraints",
+    "smp_with_constraints",
+    "smp",
+    "price",
+    "marginalPrice",
+]
+PRICE_WITHOUT_CONSTRAINT_KEYS = [
+    "priceWithoutConstraints",
+    "price_without_constraints",
+    "pricewithoutconstraints",
+    "marginalPriceWithoutConstraints",
+    "marginalpricewithoutconstraints",
+    "smpWithoutConstraints",
+    "smp_without_constraints",
+    "smp_no_constraints",
+]
+DEMAND_KEYS = ["actual_Demand", "actualDemand", "demand", "netDemand", "net_demand"]
+RENEWABLE_KEYS = ["renewableSum", "renewable_sum", "renewable"]
+
+
+def _iso_timestamp(date_str: str, time_str: str | None) -> str:
+    """
+    Convert date + time strings from NOGA into ISO 8601.
+    """
+    time_str = time_str or "00:00"
+    candidates = [
+        ("%d-%m-%Y %H:%M:%S", f"{date_str} {time_str}"),
+        ("%d-%m-%Y %H:%M", f"{date_str} {time_str}"),
+        ("%Y-%m-%d %H:%M:%S", f"{date_str} {time_str}"),
+        ("%Y-%m-%d %H:%M", f"{date_str} {time_str}"),
+    ]
+    for fmt, value in candidates:
+        try:
+            return datetime.strptime(value, fmt).isoformat()
+        except ValueError:
+            continue
+    return f"{date_str}T{time_str}"
+
+
+def _as_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_first_float(sample: Dict, keys: List[str], allow_fuzzy: bool = False) -> Optional[float]:
+    lowered = {k.lower(): v for k, v in sample.items()}
+    for key in keys:
+        if key in sample and (val := _as_float(sample.get(key))) is not None:
+            return val
+        if key.lower() in lowered and (val := _as_float(lowered.get(key.lower()))) is not None:
+            return val
+
+    if not allow_fuzzy:
+        return None
+
+    # Fuzzy fallback: any numeric field containing the token as a substring (price/smp)
+    for k, v in sample.items():
+        if not isinstance(v, (int, float, str)):
+            continue
+        k_lower = k.lower()
+        if "price" in k_lower or "smp" in k_lower:
+            val = _as_float(v)
+            if val is not None:
+                return val
+    return None
+
+
 class SMPProcessor:
     @staticmethod
-    def process_smp_data(raw_data: List[Dict]) -> Dict:
+    def process_smp_data(raw_data: List[Dict], include_samples: bool) -> Dict:
         """
-        Processes the SMP data and returns two separate chart data sets (with constraints, without constraints)
-        and a correlation view showing net demand.
+        Return SMP price with/without constraints plus net demand averages for charts.
         """
-        # Normalize payload shape: API returns list of day entries under `energy`.
-        energy_data: List[Dict] = []
+        days: List[Dict] = []
         if isinstance(raw_data, dict):
-            energy_data = raw_data.get("energy", [])
+            days = raw_data.get("energy", raw_data.get("data", [])) or []
         else:
-            energy_data = raw_data or []
-        
-        return SMPProcessor._process_day_data(energy_data)
-    @staticmethod
-    def _process_day_data(energy_data: List[Dict]) -> Dict:
-        # Logic for daily processing
-        # Process data for each day and calculate daily average for each time (24 ticks)
-        without_constraints = []
-        with_constraints = []
-        correlation_data = []
-        for day in energy_data:
-            date = day.get('date')
-            # Use productionMixData if present; fall back to forecastProductionMix.
-            production_data = day.get('productionMixData') or day.get('forecastProductionMix') or []
-            if not production_data:
-                continue
-            total_without_constraints = 0.0
-            total_with_constraints = 0.0
-            total_net_demand = 0.0
-            for time_entry in production_data:
-                total_without_constraints += time_entry.get('coal', 0)
-                total_with_constraints += time_entry.get('natural_Gas', 0)
-                total_net_demand += time_entry.get('actual_Demand', 0) - time_entry.get('renewableSum', 0)
-            count = len(production_data)
-            if count == 0:
-                continue
-            without_constraints.append({'time': date, 'price': total_without_constraints / count})
-            with_constraints.append({'time': date, 'price': total_with_constraints / count})
-            correlation_data.append({'time': date, 'net_demand': total_net_demand / count})
-        return {
-            "chart1": without_constraints,
-            "chart2": with_constraints,
-            "correlation_view": correlation_data
+            days = raw_data or []
+
+        flattened = SMPProcessor._flatten(days)
+        day_avg = SMPProcessor._aggregate(flattened, by="day")
+        month_avg = SMPProcessor._aggregate(flattened, by="month")
+
+        payload = {
+            "daily_average": day_avg,
+            "monthly_average": month_avg,
+            "chart_without_constraints": [
+                {"timestamp": r["timestamp"], "price": r["price_without_constraints"]}
+                for r in flattened
+                if r.get("price_without_constraints") is not None
+            ],
+            "chart_with_constraints": [
+                {"timestamp": r["timestamp"], "price": r["price_with_constraints"]}
+                for r in flattened
+                if r.get("price_with_constraints") is not None
+            ],
+            "correlation_view": [
+                {
+                    "timestamp": r["timestamp"],
+                    "net_demand": r["net_demand"],
+                    "price": r.get("price_with_constraints"),
+                }
+                for r in flattened
+                if r.get("net_demand") is not None and r.get("price_with_constraints") is not None
+            ],
         }
+
+        if include_samples:
+            payload["samples"] = flattened
+
+        return payload
+
     @staticmethod
-    def _process_month_data(raw_data: List[Dict]) -> Dict:
-        # Logic for monthly processing: calculate daily averages, then average those for the month
-        pass
+    def _flatten(days: List[Dict]) -> List[Dict]:
+        """
+        Flatten NOGA daily payload into timestamped samples with price/net demand.
+        """
+        records: List[Dict] = []
+        for day in days:
+            date_str = day.get("date") or day.get("day") or ""
+            samples = (
+                day.get("productionMixData")
+                or day.get("forecastProductionMix")
+                or day.get("records")
+                or day.get("data")
+                or []
+            )
+            for sample in samples:
+                ts = _iso_timestamp(date_str, sample.get("time") or sample.get("hour") or sample.get("timestamp"))
+
+                price_with = _get_first_float(sample, PRICE_WITH_CONSTRAINT_KEYS, allow_fuzzy=True)
+                price_without = _get_first_float(sample, PRICE_WITHOUT_CONSTRAINT_KEYS, allow_fuzzy=True)
+                # If only one price exists, mirror it so charts are populated.
+                if price_with is None and price_without is not None:
+                    price_with = price_without
+                if price_without is None and price_with is not None:
+                    price_without = price_with
+                demand_val = _get_first_float(sample, DEMAND_KEYS)
+                renewables_val = _get_first_float(sample, RENEWABLE_KEYS)
+                net_demand = demand_val - (renewables_val or 0) if demand_val is not None else None
+
+                records.append(
+                    {
+                        "timestamp": ts,
+                        "price_with_constraints": price_with,
+                        "price_without_constraints": price_without,
+                        "net_demand": net_demand,
+                        "date": date_str,
+                    }
+                )
+        records.sort(key=lambda x: x["timestamp"])
+        return records
+
     @staticmethod
-    def _process_year_data(raw_data: List[Dict]) -> Dict:
-        # Logic for yearly processing: calculate monthly averages, then average those for the year
-        pass
-    @staticmethod
-    def _process_between_dates_data(raw_data: List[Dict]) -> Dict:
-        # Logic for between dates: handle the provided range and calculate averages
-        pass
+    def _aggregate(records: List[Dict], by: str) -> List[Dict]:
+        """
+        Aggregate by day or month averages for the prices and net demand.
+        """
+        buckets: Dict[str, Dict[str, float | int]] = {}
+
+        for rec in records:
+            ts = rec["timestamp"]
+            try:
+                dt = datetime.fromisoformat(ts)
+            except Exception:
+                continue
+            if by == "month":
+                bucket_key = dt.strftime("%Y-%m")
+            else:
+                bucket_key = dt.date().isoformat()
+            bucket = buckets.setdefault(
+                bucket_key,
+                {
+                    "with_sum": 0.0,
+                    "without_sum": 0.0,
+                    "net_sum": 0.0,
+                    "count_with": 0,
+                    "count_without": 0,
+                    "count_net": 0,
+                },
+            )
+            if rec.get("price_with_constraints") is not None:
+                bucket["with_sum"] += rec["price_with_constraints"]  # type: ignore
+                bucket["count_with"] += 1  # type: ignore
+            if rec.get("price_without_constraints") is not None:
+                bucket["without_sum"] += rec["price_without_constraints"]  # type: ignore
+                bucket["count_without"] += 1  # type: ignore
+            if rec.get("net_demand") is not None:
+                bucket["net_sum"] += rec["net_demand"]  # type: ignore
+                bucket["count_net"] += 1  # type: ignore
+
+        aggregated: List[Dict] = []
+        for bucket_key, values in buckets.items():
+            aggregated.append(
+                {
+                    "period": bucket_key,
+                    "price_with_constraints": (
+                        values["with_sum"] / values["count_with"] if values["count_with"] else None
+                    ),
+                    "price_without_constraints": (
+                        values["without_sum"] / values["count_without"] if values["count_without"] else None
+                    ),
+                    "net_demand": values["net_sum"] / values["count_net"] if values["count_net"] else None,
+                }
+            )
+
+        aggregated.sort(key=lambda x: x["period"])
+        return aggregated

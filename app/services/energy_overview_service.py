@@ -1,5 +1,7 @@
 import os
+from datetime import datetime, timedelta
 from typing import Dict, List
+
 from app.services.noga_service import NogaService
 from app.utils.date_utils import parse_date, to_iso_date, to_noga_date
 from app.utils.response_formatter import flatten_level2, format_categories
@@ -98,6 +100,9 @@ class EnergyOverviewService:
             for k, v in level1.items()
         }
 
+        renewable_generation = level1["renewable_energy"]
+        renewable_share_percent = round((renewable_generation / total) * 100, 2) if total else 0
+
         categories = format_categories(flatten_level2(level2))
         category_percentages = {
             cat["category_name"]: round((cat["total_value"] / total) * 100, 2) if total > 0 else 0
@@ -110,7 +115,9 @@ class EnergyOverviewService:
             "percentages": percentages,
             "categories": categories,
             "category_percentages": category_percentages,
-            "total": total
+            "total": total,
+            "renewable_generation": renewable_generation,
+            "renewable_share_percent": renewable_share_percent,
         }
 
     # --------------------------------------------------------------
@@ -129,6 +136,20 @@ class EnergyOverviewService:
             to_noga_date(end_dt),
             token,
         )
+
+        # Filter raw to requested window (guard against over-fetch).
+        filtered_raw = []
+        for v in raw:
+            try:
+                ts = datetime.strptime(f"{v['date']} {v['time']}", "%d-%m-%Y %H:%M:%S")
+            except Exception:
+                try:
+                    ts = datetime.strptime(f"{v['date']} {v['time']}", "%d-%m-%Y %H:%M")
+                except Exception:
+                    continue
+            if start_dt <= ts <= end_dt + timedelta(seconds=59):
+                filtered_raw.append(v)
+        raw = filtered_raw
 
         # Hourly averaging
         hourly = EnergyOverviewService.hourly_average(raw)

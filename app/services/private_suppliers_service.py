@@ -9,8 +9,9 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from app.utils.date_utils import parse_date, to_iso_date
+from app.services.data_file_manager import ensure_fresh_data_file
 
-DEFAULT_CSV_PATH = Path(os.getenv("PRIVATE_SUPPLIERS_CSV_PATH", "Files_Netunei_hashmal_mp_niyud (3).csv"))
+DEFAULT_CSV_PATH = Path(os.getenv("PRIVATE_SUPPLIERS_CSV_PATH", "Files_Netunei_hashmal_mp_niyud.csv"))
 
 
 @dataclass
@@ -22,18 +23,23 @@ class PrivateSupplierRecord:
 
 class PrivateSuppliersService:
     @staticmethod
-    def _load_dataframe(csv_path: Path = DEFAULT_CSV_PATH) -> pd.DataFrame:
-        if not csv_path.exists():
-            raise FileNotFoundError(f"Data file not found: {csv_path}")
+    def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
+        csv_path = csv_path or ensure_fresh_data_file("niyud")
 
         df: Optional[pd.DataFrame] = None
         last_err: Optional[Exception] = None
-        for enc in ("cp1255", "windows-1255", "latin1"):
+        if csv_path.suffix.lower() in (".xls", ".xlsx"):
             try:
-                df = pd.read_csv(csv_path, encoding=enc)
-                break
+                df = pd.read_excel(csv_path)
             except Exception as exc:
                 last_err = exc
+        else:
+            for enc in ("cp1255", "windows-1255", "latin1"):
+                try:
+                    df = pd.read_csv(csv_path, encoding=enc)
+                    break
+                except Exception as exc:
+                    last_err = exc
         if df is None:
             raise last_err or ValueError("Unable to load CSV")
 
@@ -251,8 +257,8 @@ class PrivateSuppliersService:
         return mapping.get(value, value)
 
     @staticmethod
-    def get_data(start_date: Optional[str], end_date: Optional[str]) -> Dict:
-        df = PrivateSuppliersService._load_dataframe()
+    def get_data(start_date: Optional[str], end_date: Optional[str], csv_path: Optional[Path] = None) -> Dict:
+        df = PrivateSuppliersService._load_dataframe(csv_path)
         monthly, start_iso, end_iso, earliest_month, latest_month = PrivateSuppliersService._compute_monthly(
             df, start_date, end_date
         )

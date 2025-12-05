@@ -57,7 +57,7 @@ async def get_energy_production_mix(
             NOGA_TOKEN,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch production mix: {exc}")
+        raise HTTPException(status_code=424, detail=f"Failed to fetch production mix: {exc}")
 
     hourly_average = calculate_hourly_average(raw_data)
     result = EnergyMixProcessor.aggregate(raw_data)
@@ -95,7 +95,7 @@ async def export_energy_mix_to_excel(
             NOGA_TOKEN,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch production mix: {exc}")
+        raise HTTPException(status_code=424, detail=f"Failed to fetch production mix: {exc}")
 
     # Process the raw data
     result = EnergyMixProcessor.aggregate(raw_data)

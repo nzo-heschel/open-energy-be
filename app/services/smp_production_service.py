@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from fastapi import HTTPException
+
 from app.services.smp_service import SMPService
 from app.utils.date_utils import to_iso_date, to_noga_date
 
@@ -50,6 +52,34 @@ def _day_key_iso(date_str: str) -> str:
 
 
 class SMPProductionService:
+    @staticmethod
+    def _aggregate(series: List[Dict], period: str) -> List[Dict]:
+        """
+        Aggregate timestamped series by day or month.
+        """
+        buckets: Dict[str, Dict[str, float | int]] = {}
+        for item in series:
+            try:
+                dt = datetime.fromisoformat(item["timestamp"])
+            except Exception:
+                continue
+            key = dt.strftime("%Y-%m") if period == "month" else dt.date().isoformat()
+            bucket = buckets.setdefault(key, {"sum": 0.0, "count": 0})
+            if item.get("smp") is not None:
+                bucket["sum"] += item["smp"]  # type: ignore
+                bucket["count"] += 1
+
+        aggregated: List[Dict] = []
+        for key, values in buckets.items():
+            aggregated.append(
+                {
+                    "period": key,
+                    "avg_smp": values["sum"] / values["count"] if values["count"] else None,
+                }
+            )
+        aggregated.sort(key=lambda x: x["period"])
+        return aggregated
+
     @staticmethod
     async def fetch_and_process(start_dt: datetime, end_dt: datetime, token: str) -> Dict:
         raw_data = await SMPService.fetch_smp_data(
@@ -118,6 +148,15 @@ class SMPProductionService:
                 if smp_value is not None and net_demand is not None:
                     correlation.append({"smp": smp_value, "net_demand": net_demand})
 
+        if not smp_series:
+            raise HTTPException(
+                status_code=424,
+                detail=(
+                    "SMP prices were not returned by the upstream API. "
+                    "Verify the SMP endpoint access and try a shorter date range."
+                ),
+            )
+
         smp_series.sort(key=lambda x: x["timestamp"])
         net_demand_series.sort(key=lambda x: x["timestamp"])
         combined_series.sort(key=lambda x: x["timestamp"])
@@ -128,12 +167,27 @@ class SMPProductionService:
             daily_smp.append({"date": day, "daily_smp_avg": avg})
         daily_smp.sort(key=lambda x: x["date"])
 
+        # Aggregations for month/year views (driven by start/end only)
+        daily_view = SMPProductionService._aggregate(smp_series, period="day")
+        monthly_view = SMPProductionService._aggregate(smp_series, period="month")
+
+        days_delta = (end_dt - start_dt).days
+        if days_delta <= 1:
+            default_view = "day"
+        elif days_delta <= 45:
+            default_view = "month"
+        else:
+            default_view = "year"
+
         return {
             "start_date": to_iso_date(start_dt),
             "end_date": to_iso_date(end_dt),
+            "view": default_view,
             "smp_series": smp_series,
             "net_demand_series": net_demand_series,
             "combined_series": combined_series,
             "correlation": correlation,
             "daily_smp": daily_smp,
+            "daily_average": daily_view,
+            "monthly_average": monthly_view,
         }
