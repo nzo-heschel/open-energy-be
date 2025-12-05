@@ -69,41 +69,46 @@ The service is designed for dashboards, analytics platforms, energy market analy
 
 ```
 open-energy-be/
-├── app/
-│   ├── main.py                              # FastAPI app initialization & router registration
-│   │
-│   ├── api/v1/                              # API v1 endpoints
-│   │   ├── energy.py                        # Production mix endpoints
-│   │   ├── energy_mix.py                    # Alternative energy mix handling
-│   │   ├── energy_overview.py               # Overview & hierarchical data
-│   │   ├── energy_ui.py                     # UI-optimized endpoints with colors
-│   │   ├── smp.py                           # System Marginal Price endpoints
-│   │   ├── smp_production_vs_marginal_price.py  # SMP vs production correlation
-│   │   ├── private_suppliers.py             # Private supplier connections
-│   │   └── switching_requests.py            # Consumer switching request data
-│   │
-│   ├── services/                            # Business logic & data processing
-│   │   ├── noga_service.py                  # NOGA API integration
-│   │   ├── energy_service.py                # Energy data logic
-│   │   ├── energy_mix_service.py            # Energy mix aggregation
-│   │   ├── energy_mix_processor.py          # Production mix transformation
-│   │   ├── energy_overview_service.py       # Overview data assembly
-│   │   ├── smp_service.py                   # SMP data fetching
-│   │   ├── smp_processor.py                 # SMP processing
-│   │   ├── smp_production_service.py        # SMP vs production analysis
-│   │   ├── private_suppliers_service.py     # Private supplier data
-│   │   ├── switching_requests_service.py    # Switching request data
-│   │   ├── noga_mock_service.py             # Mock NOGA for testing
-│   │   └── user_service.py                  # User management (future)
-│   │
-│   └── utils/                               # Utilities & helpers
-│       ├── date_utils.py                    # Date parsing, ISO formatting, range resolution
-│       └── response_formatter.py            # Category mapping & data formatting
-│
-├── Dockerfile                               # Container definition
-├── docker-compose.yml                       # Multi-container orchestration
-├── requirements.txt                         # Python dependencies
-└── README.md                                # This file
+app/
+  api/
+    v1/
+      data_files.py
+      energy.py
+      energy_mix.py
+      energy_overview.py
+      energy_ui.py
+      private_suppliers.py
+      smp.py
+      smp_production_vs_marginal_price.py
+      switching_requests.py
+  config.py
+  main.py
+  security.py
+  services/
+    data_file_manager.py
+    energy_mix_processor.py
+    energy_mix_service.py
+    energy_overview_service.py
+    energy_processor.py
+    energy_service.py
+    noga_service.py
+    private_suppliers_service.py
+    smp_processor.py
+    smp_production_service.py
+    smp_service.py
+    switching_requests_service.py
+    user_service.py
+  utils/
+    date_utils.py
+    response_formatter.py
+data_extractor.py
+data_files/
+  Files_Netunei_hashmal_mp_niyud_05-12-2025.csv
+  Files_Netunei_hashmal_mp_tzarchan_05-12-2025.csv
+docker-compose.yml
+Dockerfile
+README.md
+requirements.txt
 ```
 
 ---
@@ -150,21 +155,13 @@ docker-compose up -d
 
 ## Configuration
 
-### Environment Variables
-
-| Variable         | Required |    | Description                   |
-| ---------------- | -------- | ---------------------------------- | ------------------------------------------------- |
-| `NOGA_API_TOKEN` | No       |    | API token for NOGA data access and authentication |
-
-**Setting in PowerShell:**
-
-```
-```
-
 **Setting in .env file (create in project root):**
 
 ```
-NOGA_API_TOKEN=your-secret-token
+NOGA_API_TOKEN
+SMP_TOKEN
+INTERNAL_API_KEY
+PROXY_URL
 ```
 
 **Using with Docker:**
@@ -745,9 +742,6 @@ docker-compose up -d
 
 ### Environment Configuration for Production
 
-- Set actual `NOGA_API_TOKEN`
-- Configure proper logging levels
-- Remove `--reload` flag (only for development)
-- Use production ASGI server (Gunicorn with Uvicorn workers)
+- Set actual `NOGA_API_TOKEN`, `PROXY_URL`, `INTERNAL_API_KEY`, `SMP_TOKEN`
 
 ---
