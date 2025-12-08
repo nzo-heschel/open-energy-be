@@ -3,6 +3,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import energy
 from app.api.v1 import energy_overview
@@ -17,6 +18,21 @@ from app.config import configure_global_proxy
 configure_global_proxy()
 
 app = FastAPI(title="Electricity Production Mix API")
+
+origins = [
+           "https://open-energy-fe.vercel.app", 
+           "http://localhost:3000",
+           "https://open-energy-be-vo4yi.ondigitalocean.app",
+           "https://localhost:8000",
+           ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
