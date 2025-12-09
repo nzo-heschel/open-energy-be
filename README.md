@@ -209,40 +209,43 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ```json
 {
-  "start_date": "2023-10-01",
-  "end_date": "2023-10-31",
+  "start_date": "2025-11-05",
+  "end_date": "2025-12-05",
   "filter": "month",
   "level1": {
-    "Non-renewables": 1200.5,
-    "Renewables": 250.2,
-    "Other": 50.3
+    "non_renewables": 4848764.2775,
+    "renewables": 746006.005,
+    "other": 145755.1475
   },
   "level2": {
-    "Non-renewables": {
-      "coal": 400.0,
-      "natural_gas": 700.0,
-      "diesel": 100.5
+    "non_renewables": {
+      "coal": 426128.9025,
+      "natural_gas": 4422635.375,
+      "diesel": 0
     },
-    "Renewables": {
-      "photoVoltaic": 200.0,
-      "wind": 30.2,
-      "biogas": 20.0
+    "renewables": {
+      "photovoltaic": 581749.4041,
+      "biogas": 6464.5783,
+      "wind": 69364.7841,
+      "solar_thermal": 31179.23,
+      "pv_storage": 57248.0083
     },
-    "Other": {
-      "pumpedStorage": 40.0,
-      "other": 10.3
+    "other": {
+      "other": 19267.07,
+      "pumped_storage": 126488.0775
     }
   },
-  "total_generation": 1501.0,
-  "renewable_share_percent": 16.67,
+  "total_generation": 5740525.43,
+  "renewable_share_percent": 13,
   "categories": [
     {
       "category_name": "renewables",
-      "total_value": 250.2,
+      "total_value": 746006.005,
       "sub_categories": [
-        { "sub_category_name": "photo_voltaic", "value": 200.0 },
-        { "sub_category_name": "wind", "value": 30.2 },
-        { "sub_category_name": "biogas", "value": 20.0 }
+        {
+          "name": "photovoltaic",
+          "value": 581749.4041
+        }
       ]
     }
   ],
@@ -307,22 +310,34 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ```json
 {
-  "start_date": "2023-01-01",
-  "end_date": "2023-12-31",
+  "start_date": "2024-12-05",
+  "end_date": "2025-12-05",
   "filter": "year",
-  "total": 18000.5,
+  "total": 80454683.55,
   "level1": {
-    "Non-renewables": 15000.0,
-    "Renewables": 2500.5,
-    "Other": 500.0
+    "fossil_energy": 66691009.15,
+    "renewable_energy": 12193200.52,
+    "other": 1570473.88
   },
-  "level2": {...},
-  "renewable_generation": 2500.5,
-  "renewable_share_percent": 13.89,
+  "level2": {
+    "fossil_energy": {
+      "coal": 8057076.35,
+      "natural_gas": 58628439.92,
+      "diesel": 5492.87
+    },
+    "renewable_energy": {
+      "photovoltaic": 10518690.13,
+      "biogas": 83390.6,
+      "wind": 840861.71,
+      "solar": 750258.06
+    }
+  },
+  "renewable_generation": 12193200.52,
+  "renewable_share_percent": 15.16,
   "category_percentages": {
-    "fossil_energy": 83.33,
-    "renewable_energy": 13.89,
-    "other": 2.78
+    "renewables": 15.16,
+    "non_renewables": 82.89,
+    "other": 1.95
   },
   "categories": [...]
 }
@@ -365,10 +380,17 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   "end_date": "2023-10-15",
   "view": "day",
   "chart_with_constraints": [
-    { "hour": "00:00", "price": 425.5 },
-    { "hour": "01:00", "price": 398.2 }
+    {
+      "timestamp": "2023-10-15T00:00:00",
+      "price": 425.5
+    }
   ],
-  "chart_without_constraints": [{ "hour": "00:00", "price": 420.0 }],
+  "chart_without_constraints": [
+    {
+      "timestamp": "2023-10-15T00:00:00",
+      "price": 420
+    }
+  ],
   "min_price": 380.5,
   "max_price": 510.3,
   "avg_price": 445.2
@@ -386,7 +408,28 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 - `start_date` (optional)
 - `end_date` (optional)
 
-**Response:** SMP data, production data, net demand, correlation metrics, and insights
+**Response (200 OK):**
+
+```json
+{
+  "start_date": "2023-10-15",
+  "end_date": "2023-10-15",
+  "view": "day",
+  "smp_series": [
+    {
+      "timestamp": "2023-10-15T00:00:00",
+      "smp": 425.5
+    }
+  ],
+  "net_demand_series": [
+    {
+      "timestamp": "2023-10-15T00:00:00",
+      "net_demand": 3200.1
+    }
+  ],
+  "monthly_average": [{"period": "2023-10", "avg_smp": 410}]
+}
+```
 
 ---
 
@@ -414,11 +457,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
       "total_consumers": 319380,
       "new_additions": 74192
     },
-    {
-      "month": "2025-01",
-      "total_consumers": 422893,
-      "new_additions": 46989
-    }
+    { "...": "..." }
   ],
   "segments": {
     "location": [
@@ -426,43 +465,11 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
         "month": "2024-11",
         "location": "existing_regulation",
         "total_consumers": 139323
-      }
-    ],
-    "sector": [
-      {
-        "month": "2024-11",
-        "sector": "residential",
-        "total_consumers": 276402
-      }
+      },
+      { "...": "..." }
     ]
-  },
-  "charts": {
-    "by_customer_type": {
-      "data": [
-        {
-          "label": "residential",
-          "count": 279230
-        }
-      ]
-    },
-    "by_region": {
-      "data": [
-        {
-          "label": "central",
-          "count": 104728
-        }
-      ]
-    },
-    "total_requests": {
-      "data": [
-        {
-          "count": 303833
-        }
-      ]
-    }
   }
 }
-
 ```
 
 ---

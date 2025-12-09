@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta
+import re
 from typing import Dict, List
 
 from http.client import IncompleteRead
@@ -12,6 +13,12 @@ from urllib3.exceptions import ProtocolError
 
 from app.config import configure_global_proxy, get_proxies
 BASE_URL = "https://apim-api.noga-iso.co.il/"
+
+
+def to_snake_case(s: str) -> str:
+    s = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", s)
+    s = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s)
+    return s.lower()
 
 
 class NogaService:
@@ -42,7 +49,7 @@ class NogaService:
             for day_item in energy:
                 date = day_item.get("date")
                 time_items = day_item[list(day_item.keys())[1]]  # second key has time data
-                for time_item in time_items:
+                for time_item in (time_items or []):
                     value = {"date": date}
                     value.update(time_item)
                     values.append(value)
@@ -139,19 +146,19 @@ class NogaService:
         for v in values:
             agg["Non-renewables"] += sum([
                 v.get("coal", 0),
-                v.get("natural_Gas", 0),
+                v.get("natural_gas", 0),
                 v.get("mazut", 0)  # diesel
             ])
             agg["Renewables"] += sum([
-                v.get("photoVoltaic", 0),
-                v.get("bio_Gas", 0),
+                v.get("photovoltaic", 0),
+                v.get("biogas", 0),
                 v.get("wind", 0),
-                v.get("termo_Soler", 0),
-                v.get("photovoltaicIntegrated", 0)
+                v.get("termo_soler", 0),
+                v.get("photovoltaic_integrated", 0)
             ])
             agg["Other"] += sum([
                 v.get("other", 0),
-                v.get("pumpedStorage", 0)
+                v.get("pumped_storage", 0)
             ])
 
         return agg

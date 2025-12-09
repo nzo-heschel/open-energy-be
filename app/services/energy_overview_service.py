@@ -73,20 +73,20 @@ class EnergyOverviewService:
         for h in hourly:
             # Fossil
             level2["fossil_energy"]["coal"] += sum_keys(h, ["coal"])
-            level2["fossil_energy"]["natural_gas"] += sum_keys(h, ["natural_Gas", "natural_gas"])
+            level2["fossil_energy"]["natural_gas"] += sum_keys(h, ["natural_gas"])
             level2["fossil_energy"]["diesel"] += sum_keys(h, ["mazut", "diesel"])
 
             # Renewable
             level2["renewable_energy"]["photovoltaic"] += sum_keys(
-                h, ["photoVoltaic", "photovoltaic", "photovoltaicIntegrated"]
+                h, ["photovoltaic", "photovoltaic_integrated"]
             )
-            level2["renewable_energy"]["biogas"] += sum_keys(h, ["bio_Gas", "biogas"])
+            level2["renewable_energy"]["biogas"] += sum_keys(h, ["biogas"])
             level2["renewable_energy"]["wind"] += sum_keys(h, ["wind"])
-            level2["renewable_energy"]["solar"] += sum_keys(h, ["termo_Soler", "solar"])
+            level2["renewable_energy"]["solar"] += sum_keys(h, ["termo_soler", "solar"])
 
             # Other
             level2["other"]["other"] += sum_keys(h, ["other"])
-            level2["other"]["pumped_storage"] += sum_keys(h, ["pumpedStorage", "pumped_storage"])
+            level2["other"]["pumped_storage"] += sum_keys(h, ["pumped_storage"])
 
         # Level-1 sums
         level1["fossil_energy"] = sum(level2["fossil_energy"].values())

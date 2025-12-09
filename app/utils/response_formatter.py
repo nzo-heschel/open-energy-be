@@ -63,7 +63,7 @@ def format_categories(sub_totals: Dict[str, float]) -> List[Dict]:
             value = _sum_keys(sub_totals, sources)
             sub_categories.append(
                 {
-                    "sub_category_name": dest_name,
+                    "name": dest_name,
                     "value": value,
                 }
             )

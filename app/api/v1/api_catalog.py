@@ -1,19 +1,29 @@
 # app/api/v1/api_catalog.py
-from fastapi import APIRouter
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/apis", tags=["API Catalog"])
 
-# Catalog_built from README (1).md and inline endpoint docs.
-API_CATALOG = [
-    {
-        "title": "Energy Overview",
-        "link": "/api/v1/energy/overview",
-        "method": "GET",
-        "description": "Hierarchical_breakdown of energy sources with totals and renewable share percentages.",
-        "params": [
-            "start_date (optional, YYYY-MM-DD)",
-            "end_date (optional, YYYY-MM-DD)",
-        ],
+# Only surface public APIs (exclude admin/utility endpoints).
+_ALLOWED_ENDPOINTS = {
+    "/api/v1/energy/overview",
+    "/api/v1/energy/production-mix",
+    "/api/v1/energy/smp",
+    "/api/v1/energy/smp-production-vs-marginal-price",
+    "/api/v1/private-supplier-connected-consumers",
+    "/api/v1/switching-requests",
+}
+
+
+def _normalize_path(path: str) -> str:
+    if path != "/" and path.endswith("/"):
+        return path[:-1]
+    return path
+
+# Legacy examples preserved from the previously hardcoded catalog for richer sample payloads.
+LEGACY_EXAMPLES: Dict[tuple[str, str], Dict[str, Any]] = {
+    ("/api/v1/energy/overview", "GET"): {
         "sample_response": ["200 OK"],
         "sample_response_body": [
             {
@@ -25,28 +35,28 @@ API_CATALOG = [
                         "category_name": "renewables",
                         "total_value": 12193200.523333317,
                         "sub_categories": [
-                            {"sub_category_name": "photo_voltaic", "value": 10518690.135},
-                            {"sub_category_name": "biogas", "value": 83390.60166666686},
-                            {"sub_category_name": "wind", "value": 840861.7166666664},
-                            {"sub_category_name": "solar_thermal", "value": 750258.0699999835},
-                            {"sub_category_name": "pv_storage", "value": 0},
+                            {"name": "photo_voltaic", "value": 10518690.135},
+                            {"name": "biogas", "value": 83390.60166666686},
+                            {"name": "wind", "value": 840861.7166666664},
+                            {"name": "solar_thermal", "value": 750258.0699999835},
+                            {"name": "pv_storage", "value": 0},
                         ],
                     },
                     {
                         "category_name": "non_renewables",
                         "total_value": 66691009.1500001,
                         "sub_categories": [
-                            {"sub_category_name": "coal", "value": 8057076.353333344},
-                            {"sub_category_name": "natural_gas", "value": 58628439.924166754},
-                            {"sub_category_name": "diesel", "value": 5492.8725},
+                            {"name": "coal", "value": 8057076.353333344},
+                            {"name": "natural_gas", "value": 58628439.924166754},
+                            {"name": "diesel", "value": 5492.8725},
                         ],
                     },
                     {
                         "category_name": "other",
                         "total_value": 1570473.8825000045,
                         "sub_categories": [
-                            {"sub_category_name": "other", "value": 265147.95249999943},
-                            {"sub_category_name": "pumped_storage", "value": 1305325.930000005},
+                            {"name": "other", "value": 265147.95249999943},
+                            {"name": "pumped_storage", "value": 1305325.930000005},
                         ],
                     },
                 ],
@@ -88,15 +98,7 @@ API_CATALOG = [
             }
         ],
     },
-    {
-        "title": "Energy Production Mix",
-        "link": "/api/v1/energy/production-mix",
-        "method": "GET",
-        "description": "Aggregated electricity production mix_by source type (fossil, renewable, other).",
-        "params": [
-            "start_date (optional, YYYY-MM-DD)",
-            "end_date (optional, YYYY-MM-DD)",
-        ],
+    ("/api/v1/energy/production-mix", "GET"): {
         "sample_response": ["200 OK"],
         "sample_response_body": [
             {
@@ -104,24 +106,24 @@ API_CATALOG = [
                 "end_date": "2025-12-05",
                 "filter": "month",
                 "level1": {
-                    "Non-renewables": 4848764.2775,
-                    "Renewables": 746006.005,
-                    "Other": 145755.1475,
+                    "non-renewables": 4848764.2775,
+                    "renewables": 746006.005,
+                    "other": 145755.1475,
                 },
                 "level2": {
-                    "Non-renewables": {
+                    "non-renewables": {
                         "coal": 426128.9025,
                         "natural_gas": 4422635.375,
                         "diesel": 0,
                     },
-                    "Renewables": {
+                    "renewables": {
                         "photoVoltaic": 581749.4041666667,
                         "biogas": 6464.578333333333,
                         "wind": 69364.78416666666,
                         "solar_thermal": 31179.23,
                         "pv_storage": 57248.00833333333,
                     },
-                    "Other": {
+                    "other": {
                         "other": 19267.07,
                         "pumped_storage": 126488.0775,
                     },
@@ -133,28 +135,28 @@ API_CATALOG = [
                         "category_name": "renewables",
                         "total_value": 746006.005,
                         "sub_categories": [
-                            {"sub_category_name": "photo_voltaic", "value": 581749.4041666667},
-                            {"sub_category_name": "biogas", "value": 6464.578333333333},
-                            {"sub_category_name": "wind", "value": 69364.78416666666},
-                            {"sub_category_name": "solar_thermal", "value": 31179.23},
-                            {"sub_category_name": "pv_storage", "value": 57248.00833333333},
+                            {"name": "photo_voltaic", "value": 581749.4041666667},
+                            {"name": "biogas", "value": 6464.578333333333},
+                            {"name": "wind", "value": 69364.78416666666},
+                            {"name": "solar_thermal", "value": 31179.23},
+                            {"name": "pv_storage", "value": 57248.00833333333},
                         ],
                     },
                     {
                         "category_name": "non_renewables",
                         "total_value": 4848764.2775,
                         "sub_categories": [
-                            {"sub_category_name": "coal", "value": 426128.9025},
-                            {"sub_category_name": "natural_gas", "value": 4422635.375},
-                            {"sub_category_name": "diesel", "value": 0},
+                            {"name": "coal", "value": 426128.9025},
+                            {"name": "natural_gas", "value": 4422635.375},
+                            {"name": "diesel", "value": 0},
                         ],
                     },
                     {
                         "category_name": "other",
                         "total_value": 145755.1475,
                         "sub_categories": [
-                            {"sub_category_name": "other", "value": 19267.07},
-                            {"sub_category_name": "pumped_storage", "value": 126488.0775},
+                            {"name": "other", "value": 19267.07},
+                            {"name": "pumped_storage", "value": 126488.0775},
                         ],
                     },
                 ],
@@ -167,15 +169,7 @@ API_CATALOG = [
             }
         ],
     },
-    {
-        "title": "System Marginal Price (SMP)",
-        "link": "/api/v1/energy/smp",
-        "method": "GET",
-        "description": "System Marginal Price (electricity market clearing price) data.",
-        "params": [
-            "start_date (optional, defaults to last 1 day; YYYY-MM-DD)",
-            "end_date (optional, YYYY-MM-DD)",
-        ],
+    ("/api/v1/energy/smp", "GET"): {
         "sample_response": ["200 OK"],
         "sample_response_body": [
             {
@@ -195,535 +189,82 @@ API_CATALOG = [
             }
         ],
     },
-    {
-        "title": "SMP Production vs Marginal Price",
-        "link": "/api/v1/energy/smp-production-vs-marginal-price",
-        "method": "GET",
-        "description": "Correlate electricity production with marginal pricing for market analysis.",
-        "params": [
-            "start_date (optional, YYYY-MM-DD)",
-            "end_date (optional, YYYY-MM-DD)",
-        ],
+    ("/api/v1/energy/smp-production-vs-marginal-price", "GET"): {
         "sample_response": ["200 OK"],
-        "sample_response_body": [
-            {
-                "start_date": "2023-10-15",
-                "end_date": "2023-10-15",
-                "view": "day",
-                "smp_series": [
-                    {"timestamp": "2023-10-15T00:00:00", "smp": 425.5}
-                ],
-                "net_demand_series": [
-                    {"timestamp": "2023-10-15T00:00:00", "net_demand": 3200.1}
-                ],
-                "combined_series": [
-                    {
-                        "timestamp": "2023-10-15T00:00:00",
-                        "smp": 425.5,
-                        "net_demand": 3200.1,
-                    }
-                ],
-                "correlation": [
-                    {"smp": 425.5, "net_demand": 3200.1}
-                ],
-                "daily_smp": [
-                    {"date": "2023-10-15", "daily_smp_avg": 440.2}
-                ],
-                "daily_average": [
-                    {"period": "2023-10-15", "avg_smp": 440.2}
-                ],
-                "monthly_average": [
-                    {"period": "2023-10", "avg_smp": 410.0}
-                ],
-            }
-        ],
+        "sample_response_body": {
+            "start_date": "2023-10-15",
+            "end_date": "2023-10-15",
+            "view": "day",
+            "smp_series": [
+                {"timestamp": "2023-10-15T00:00:00", "smp": 420.1},
+                {"timestamp": "2023-10-15T01:00:00", "smp": 415.0},
+            ],
+            "net_demand_series": [
+                {"timestamp": "2023-10-15T00:00:00", "net_demand": 4200.5},
+                {"timestamp": "2023-10-15T01:00:00", "net_demand": 4150.2},
+            ],
+            "combined_series": [
+                {"timestamp": "2023-10-15T00:00:00", "smp": 420.1, "net_demand": 4200.5},
+                {"timestamp": "2023-10-15T01:00:00", "smp": 415.0, "net_demand": 4150.2},
+            ],
+            "correlation": [
+                {"smp": 420.1, "net_demand": 4200.5},
+                {"smp": 415.0, "net_demand": 4150.2},
+            ],
+            "daily_smp": [{"date": "2023-10-15", "daily_smp_avg": 417.55}],
+            "daily_average": [{"period": "2023-10-15", "avg_smp": 417.55}],
+            "monthly_average": [{"period": "2023-10", "avg_smp": 417.55}],
+        },
     },
-    {
-        "title": "Private Supplier Connected Consumers",
-        "link": "/api/v1/private-supplier-connected-consumers",
-        "method": "GET",
-        "description": "Monthly time series of consumers connected to private electricity suppliers.",
-        "params": [
-            "start_date (optional, MM-YYYY)",
-            "end_date (optional, MM-YYYY)",
-        ],
+    ("/api/v1/private-supplier-connected-consumers", "GET"): {
         "sample_response": ["200 OK"],
-        "sample_response_body": [
-            {
-                "start_date": "2024-11-01",
-                "end_date": "2025-10-01",
-                "unit": "count",
-                "labels": {
-                    "month": "Month",
-                    "total_consumers": "Total Consumers",
-                    "new_additions": "New Additions",
-                },
-                "data": [
-                    {"month": "2024-11", "total_consumers": 319380, "new_additions": 74192},
-                    {"month": "2024-12", "total_consumers": 375904, "new_additions": 56524},
-                    {"month": "2025-01", "total_consumers": 422893, "new_additions": 46989},
-                    {"month": "2025-02", "total_consumers": 497333, "new_additions": 74440},
-                    {"month": "2025-03", "total_consumers": 535441, "new_additions": 38108},
-                    {"month": "2025-04", "total_consumers": 576520, "new_additions": 41079},
-                    {"month": "2025-05", "total_consumers": 624441, "new_additions": 47921},
-                    {"month": "2025-06", "total_consumers": 685173, "new_additions": 60732},
-                    {"month": "2025-07", "total_consumers": 736317, "new_additions": 51144},
-                    {"month": "2025-08", "total_consumers": 770677, "new_additions": 34360},
-                    {"month": "2025-09", "total_consumers": 801111, "new_additions": 30434},
-                    {"month": "2025-10", "total_consumers": 852353, "new_additions": 51242},
+        "sample_response_body": {
+            "start_date": "2024-11-01",
+            "end_date": "2025-10-01",
+            "unit": "count",
+            "labels": {
+                "month": "Month",
+                "total_consumers": "Total Consumers",
+                "new_additions": "New Additions",
+            },
+            "data": [
+                {"month": "2024-11", "total_consumers": 319380.0, "new_additions": 74192.0},
+                {"month": "2024-12", "total_consumers": 375904.0, "new_additions": 56524.0},
+                {"month": "2025-01", "total_consumers": 422893.0, "new_additions": 46989.0},
+                {"month": "2025-02", "total_consumers": 497333.0, "new_additions": 74440.0},
+                {"month": "2025-03", "total_consumers": 535441.0, "new_additions": 38108.0},
+                {"month": "2025-04", "total_consumers": 576520.0, "new_additions": 41079.0},
+            ],
+            "segments": {
+                "location": [
+                    {"month": "2024-11", "location": "existing_regulation", "total_consumers": 139323.0, "new_additions": 19354.0},
+                    {"month": "2024-12", "location": "existing_regulation", "total_consumers": 172587.0, "new_additions": 33264.0},
+                    {"month": "2025-01", "location": "existing_regulation", "total_consumers": 195807.0, "new_additions": 23220.0},
+                    {"month": "2025-02", "location": "existing_regulation", "total_consumers": 238983.0, "new_additions": 43176.0},
+                    {"month": "2025-03", "location": "existing_regulation", "total_consumers": 256147.0, "new_additions": 17164.0},
+                    {"month": "2025-04", "location": "existing_regulation", "total_consumers": 272176.0, "new_additions": 16029.0},
                 ],
-                "segments": {
-                    "location": [
-                        {
-                            "month": "2024-11",
-                            "location": "existing_regulation",
-                            "total_consumers": 139323,
-                            "new_additions": 19354,
-                        },
-                        {
-                            "month": "2024-12",
-                            "location": "existing_regulation",
-                            "total_consumers": 172587,
-                            "new_additions": 33264,
-                        },
-                        {
-                            "month": "2025-01",
-                            "location": "existing_regulation",
-                            "total_consumers": 195807,
-                            "new_additions": 23220,
-                        },
-                        {
-                            "month": "2025-02",
-                            "location": "existing_regulation",
-                            "total_consumers": 238983,
-                            "new_additions": 43176,
-                        },
-                        {
-                            "month": "2025-03",
-                            "location": "existing_regulation",
-                            "total_consumers": 256147,
-                            "new_additions": 17164,
-                        },
-                        {
-                            "month": "2025-04",
-                            "location": "existing_regulation",
-                            "total_consumers": 272176,
-                            "new_additions": 16029,
-                        },
-                        {
-                            "month": "2025-05",
-                            "location": "existing_regulation",
-                            "total_consumers": 299403,
-                            "new_additions": 27227,
-                        },
-                        {
-                            "month": "2025-06",
-                            "location": "existing_regulation",
-                            "total_consumers": 335425,
-                            "new_additions": 36022,
-                        },
-                        {
-                            "month": "2025-07",
-                            "location": "existing_regulation",
-                            "total_consumers": 375110,
-                            "new_additions": 39685,
-                        },
-                        {
-                            "month": "2025-08",
-                            "location": "existing_regulation",
-                            "total_consumers": 392534,
-                            "new_additions": 17424,
-                        },
-                        {
-                            "month": "2025-09",
-                            "location": "existing_regulation",
-                            "total_consumers": 413457,
-                            "new_additions": 20923,
-                        },
-                        {
-                            "month": "2025-10",
-                            "location": "existing_regulation",
-                            "total_consumers": 445538,
-                            "new_additions": 32081,
-                        },
-                        {
-                            "month": "2024-11",
-                            "location": "competitive_supply",
-                            "total_consumers": 180057,
-                            "new_additions": 54838,
-                        },
-                        {
-                            "month": "2024-12",
-                            "location": "competitive_supply",
-                            "total_consumers": 203317,
-                            "new_additions": 23260,
-                        },
-                        {
-                            "month": "2025-01",
-                            "location": "competitive_supply",
-                            "total_consumers": 227086,
-                            "new_additions": 23769,
-                        },
-                        {
-                            "month": "2025-02",
-                            "location": "competitive_supply",
-                            "total_consumers": 258350,
-                            "new_additions": 31264,
-                        },
-                        {
-                            "month": "2025-03",
-                            "location": "competitive_supply",
-                            "total_consumers": 279294,
-                            "new_additions": 20944,
-                        },
-                        {
-                            "month": "2025-04",
-                            "location": "competitive_supply",
-                            "total_consumers": 304344,
-                            "new_additions": 25050,
-                        },
-                        {
-                            "month": "2025-05",
-                            "location": "competitive_supply",
-                            "total_consumers": 325038,
-                            "new_additions": 20694,
-                        },
-                        {
-                            "month": "2025-06",
-                            "location": "competitive_supply",
-                            "total_consumers": 349748,
-                            "new_additions": 24710,
-                        },
-                        {
-                            "month": "2025-07",
-                            "location": "competitive_supply",
-                            "total_consumers": 361207,
-                            "new_additions": 11459,
-                        },
-                        {
-                            "month": "2025-08",
-                            "location": "competitive_supply",
-                            "total_consumers": 378143,
-                            "new_additions": 16936,
-                        },
-                        {
-                            "month": "2025-09",
-                            "location": "competitive_supply",
-                            "total_consumers": 387654,
-                            "new_additions": 9511,
-                        },
-                        {
-                            "month": "2025-10",
-                            "location": "competitive_supply",
-                            "total_consumers": 406815,
-                            "new_additions": 19161,
-                        },
-                    ],
-                    "sector": [
-                        {
-                            "month": "2024-11",
-                            "sector": "residential",
-                            "total_consumers": 276402,
-                            "new_additions": 65514,
-                        },
-                        {
-                            "month": "2024-12",
-                            "sector": "residential",
-                            "total_consumers": 328797,
-                            "new_additions": 52395,
-                        },
-                        {
-                            "month": "2025-01",
-                            "sector": "residential",
-                            "total_consumers": 368627,
-                            "new_additions": 39830,
-                        },
-                        {
-                            "month": "2025-02",
-                            "sector": "residential",
-                            "total_consumers": 437162,
-                            "new_additions": 68535,
-                        },
-                        {
-                            "month": "2025-03",
-                            "sector": "residential",
-                            "total_consumers": 471339,
-                            "new_additions": 34177,
-                        },
-                        {
-                            "month": "2025-04",
-                            "sector": "residential",
-                            "total_consumers": 505448,
-                            "new_additions": 34109,
-                        },
-                        {
-                            "month": "2025-05",
-                            "sector": "residential",
-                            "total_consumers": 549584,
-                            "new_additions": 44136,
-                        },
-                        {
-                            "month": "2025-06",
-                            "sector": "residential",
-                            "total_consumers": 604799,
-                            "new_additions": 55215,
-                        },
-                        {
-                            "month": "2025-07",
-                            "sector": "residential",
-                            "total_consumers": 648980,
-                            "new_additions": 44181,
-                        },
-                        {
-                            "month": "2025-08",
-                            "sector": "residential",
-                            "total_consumers": 680040,
-                            "new_additions": 31060,
-                        },
-                        {
-                            "month": "2025-09",
-                            "sector": "residential",
-                            "total_consumers": 707506,
-                            "new_additions": 27466,
-                        },
-                        {
-                            "month": "2025-10",
-                            "sector": "residential",
-                            "total_consumers": 753549,
-                            "new_additions": 46043,
-                        },
-                        {
-                            "month": "2024-11",
-                            "sector": "non_residential",
-                            "total_consumers": 42978,
-                            "new_additions": 8678,
-                        },
-                        {
-                            "month": "2024-12",
-                            "sector": "non_residential",
-                            "total_consumers": 47107,
-                            "new_additions": 4129,
-                        },
-                        {
-                            "month": "2025-01",
-                            "sector": "non_residential",
-                            "total_consumers": 54266,
-                            "new_additions": 7159,
-                        },
-                        {
-                            "month": "2025-02",
-                            "sector": "non_residential",
-                            "total_consumers": 60171,
-                            "new_additions": 5905,
-                        },
-                        {
-                            "month": "2025-03",
-                            "sector": "non_residential",
-                            "total_consumers": 64102,
-                            "new_additions": 3931,
-                        },
-                        {
-                            "month": "2025-04",
-                            "sector": "non_residential",
-                            "total_consumers": 71072,
-                            "new_additions": 6970,
-                        },
-                        {
-                            "month": "2025-05",
-                            "sector": "non_residential",
-                            "total_consumers": 74857,
-                            "new_additions": 3785,
-                        },
-                        {
-                            "month": "2025-06",
-                            "sector": "non_residential",
-                            "total_consumers": 80374,
-                            "new_additions": 5517,
-                        },
-                        {
-                            "month": "2025-07",
-                            "sector": "non_residential",
-                            "total_consumers": 87337,
-                            "new_additions": 6963,
-                        },
-                        {
-                            "month": "2025-08",
-                            "sector": "non_residential",
-                            "total_consumers": 90637,
-                            "new_additions": 3300,
-                        },
-                        {
-                            "month": "2025-09",
-                            "sector": "non_residential",
-                            "total_consumers": 93605,
-                            "new_additions": 2968,
-                        },
-                        {
-                            "month": "2025-10",
-                            "sector": "non_residential",
-                            "total_consumers": 98804,
-                            "new_additions": 5199,
-                        },
-                    ],
-                    "meter_type": [
-                        {
-                            "month": "2024-11",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 180057,
-                            "new_additions": 54838,
-                        },
-                        {
-                            "month": "2024-12",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 203317,
-                            "new_additions": 23260,
-                        },
-                        {
-                            "month": "2025-01",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 227086,
-                            "new_additions": 23769,
-                        },
-                        {
-                            "month": "2025-02",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 258350,
-                            "new_additions": 31264,
-                        },
-                        {
-                            "month": "2025-03",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 279294,
-                            "new_additions": 20944,
-                        },
-                        {
-                            "month": "2025-04",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 304344,
-                            "new_additions": 25050,
-                        },
-                        {
-                            "month": "2025-05",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 325038,
-                            "new_additions": 20694,
-                        },
-                        {
-                            "month": "2025-06",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 349748,
-                            "new_additions": 24710,
-                        },
-                        {
-                            "month": "2025-07",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 361207,
-                            "new_additions": 11459,
-                        },
-                        {
-                            "month": "2025-08",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 378143,
-                            "new_additions": 16936,
-                        },
-                        {
-                            "month": "2025-09",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 387654,
-                            "new_additions": 9511,
-                        },
-                        {
-                            "month": "2025-10",
-                            "meter_type": "virtual_suppliers",
-                            "total_consumers": 406815,
-                            "new_additions": 19161,
-                        },
-                        {
-                            "month": "2024-11",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 139323,
-                            "new_additions": 19354,
-                        },
-                        {
-                            "month": "2024-12",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 172587,
-                            "new_additions": 33264,
-                        },
-                        {
-                            "month": "2025-01",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 195807,
-                            "new_additions": 23220,
-                        },
-                        {
-                            "month": "2025-02",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 238983,
-                            "new_additions": 43176,
-                        },
-                        {
-                            "month": "2025-03",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 256147,
-                            "new_additions": 17164,
-                        },
-                        {
-                            "month": "2025-04",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 272176,
-                            "new_additions": 16029,
-                        },
-                        {
-                            "month": "2025-05",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 299403,
-                            "new_additions": 27227,
-                        },
-                        {
-                            "month": "2025-06",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 335425,
-                            "new_additions": 36022,
-                        },
-                        {
-                            "month": "2025-07",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 375110,
-                            "new_additions": 39685,
-                        },
-                        {
-                            "month": "2025-08",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 392534,
-                            "new_additions": 17424,
-                        },
-                        {
-                            "month": "2025-09",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 413457,
-                            "new_additions": 20923,
-                        },
-                        {
-                            "month": "2025-10",
-                            "meter_type": "suppliers_with_generation",
-                            "total_consumers": 445538,
-                            "new_additions": 32081,
-                        },
-                    ],
-                },
-                "note": None,
-            }
-        ],
+                "sector": [
+                    {"month": "2024-11", "sector": "residential", "total_consumers": 276402.0, "new_additions": 65514.0},
+                    {"month": "2024-12", "sector": "residential", "total_consumers": 328797.0, "new_additions": 52395.0},
+                    {"month": "2025-01", "sector": "residential", "total_consumers": 368627.0, "new_additions": 39830.0},
+                    {"month": "2025-02", "sector": "residential", "total_consumers": 437162.0, "new_additions": 68535.0},
+                    {"month": "2025-03", "sector": "residential", "total_consumers": 471339.0, "new_additions": 34177.0},
+                    {"month": "2025-04", "sector": "residential", "total_consumers": 505448.0, "new_additions": 34109.0},
+                ],
+                "meter_type": [
+                    {"month": "2024-11", "meter_type": "virtual_suppliers", "total_consumers": 180057.0, "new_additions": 54838.0},
+                    {"month": "2024-12", "meter_type": "virtual_suppliers", "total_consumers": 203317.0, "new_additions": 23260.0},
+                    {"month": "2025-01", "meter_type": "virtual_suppliers", "total_consumers": 227086.0, "new_additions": 23769.0},
+                    {"month": "2025-02", "meter_type": "virtual_suppliers", "total_consumers": 258350.0, "new_additions": 31264.0},
+                    {"month": "2025-03", "meter_type": "virtual_suppliers", "total_consumers": 279294.0, "new_additions": 20944.0},
+                    {"month": "2025-04", "meter_type": "virtual_suppliers", "total_consumers": 304344.0, "new_additions": 25050.0},
+                ],
+            },
+            "note": None,
+        },
     },
-    {
-        "title": "Switching Requests",
-        "link": "/api/v1/switching-requests",
-        "method": "GET",
-        "description": "Consumer electricity supplier switching request data split_by residential and non_residential.",
-        "params": [
-            "customer_type (optional, residential | non_residential)",
-        ],
+    ("/api/v1/switching-requests", "GET"): {
         "sample_response": ["200 OK"],
         "sample_response_body": [
             {
@@ -784,24 +325,140 @@ API_CATALOG = [
                         ],
                     },
                     "requests_by_status": {"label": "Requests_by status", "data": []},
-                    "requests_by_rejection_reason": {
-                        "label": "Requests_by rejection reason",
-                        "data": [],
-                    },
-                    "total_requests": {
-                        "label": "Total requests",
-                        "data": [{"count": 303833}],
-                    },
+                    "requests_by_rejection_reason": {"label": "Requests_by rejection reason", "data": []},
+                    "total_requests": {"label": "Total requests", "data": [{"count": 303833}]},
                 },
             }
         ],
     },
-]
+}
+
+DESCRIPTIONS: Dict[str, str] = {
+    "/api/v1/energy/overview": (
+        "Hierarchical breakdown of generation by source (level1/level2), totals, renewable share, "
+        "and inferred period for the requested date window (defaults to last 12 months)."
+    ),
+    "/api/v1/energy/production-mix": (
+        "Aggregated electricity production mix using hourly averages of 5-minute NOGA data with level1/level2 totals, "
+        "categories, and renewable share (defaults to the configured rolling window)."
+    ),
+    "/api/v1/energy/smp": (
+        "System Marginal Price (market clearing price) with/without constraints, min/max/avg, and an adaptive view "
+        "based on the requested date range."
+    ),
+    "/api/v1/energy/smp-production-vs-marginal-price": (
+        "Correlates SMP prices with net demand and renewables; returns SMP, net demand, combined series, correlation, "
+        "and daily/monthly averages for the requested window."
+    ),
+    "/api/v1/private-supplier-connected-consumers": (
+        "Monthly time series of private supplier connected consumers with cumulative totals, new additions, and "
+        "segment breakdowns (location, sector, meter type); defaults to the latest 12 months."
+    ),
+    "/api/v1/switching-requests": (
+        "Consumer supplier switching requests split by customer type, region, voltage, meter type, regulation, and "
+        "connection size, plus totals; optional customer_type filter."
+    ),
+}
+
+def _should_include(path: str) -> bool:
+    return _normalize_path(path) in _ALLOWED_ENDPOINTS
 
 
-@router.get("/")
-async def list_apis():
+def _first_example(content: Dict[str, Any]) -> Any:
     """
-    Provide a single JSON payload describing the six published APIs.
+    Pick the first inline OpenAPI example if present.
     """
-    return API_CATALOG
+    for media in content.values():
+        if not isinstance(media, dict):
+            continue
+        if "example" in media:
+            return media["example"]
+        examples = media.get("examples")
+        if isinstance(examples, dict):
+            for sample in examples.values():
+                if isinstance(sample, dict) and "value" in sample:
+                    return sample["value"]
+    return None
+
+
+def _format_params(operation: Dict[str, Any]) -> List[str]:
+    params: List[str] = []
+    for param in operation.get("parameters", []):
+        schema = param.get("schema") or {}
+        param_type = schema.get("type") or schema.get("title") or "any"
+        required = "required" if param.get("required") else "optional"
+        location = param.get("in", "query")
+        default = schema.get("default")
+        default_suffix = f", default={default}" if default is not None else ""
+        params.append(
+            f"{param.get('name')} ({location}, {param_type}, {required}{default_suffix})"
+        )
+    return params
+
+
+def _pick_example(responses: Dict[str, Any]) -> Any:
+    preferred = ["200", "201", "202"]
+    order = preferred + [code for code in responses.keys() if code not in preferred]
+    for code in order:
+        resp = responses.get(code)
+        if not resp:
+            continue
+        content = resp.get("content") or {}
+        example = _first_example(content)
+        if example is not None:
+            return example
+    return None
+
+
+def _build_catalog(openapi_schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+    catalog: List[Dict[str, Any]] = []
+    paths = openapi_schema.get("paths", {})
+
+    def _clean_title(raw: str | None, fallback: str) -> str:
+        if not raw:
+            return fallback
+        lower = raw.lower().lstrip()
+        for verb in ("get ", "post ", "put ", "delete ", "patch ", "head ", "options "):
+            if lower.startswith(verb):
+                return raw[len(verb):].lstrip()
+        return raw
+
+    for path, methods in paths.items():
+        normalized_path = _normalize_path(path)
+        if not _should_include(normalized_path):
+            continue
+        for method, operation in methods.items():
+            verb = method.upper()
+            if verb in {"HEAD", "OPTIONS"} or not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses") or {}
+            entry = {
+                "title": _clean_title(operation.get("summary"), operation.get("operationId") or path),
+                "link": normalized_path,
+                "method": verb,
+                "description": DESCRIPTIONS.get(normalized_path) or operation.get("description"),
+                "params": _format_params(operation),
+                "sample_response": sorted(responses.keys()),
+                "sample_response_body": _pick_example(responses),
+            }
+
+            override = LEGACY_EXAMPLES.get((normalized_path, verb))
+            if override:
+                if "sample_response" in override:
+                    entry["sample_response"] = override["sample_response"]
+                if "sample_response_body" in override:
+                    entry["sample_response_body"] = override["sample_response_body"]
+
+            catalog.append(entry)
+
+    catalog.sort(key=lambda item: (item["link"], item["method"]))
+    return catalog
+
+
+@router.get("/", summary="API catalog", description="All registered /api endpoints.")
+async def list_apis(request: Request) -> List[Dict[str, Any]]:
+    """
+    Build the catalog dynamically from the live OpenAPI schema.
+    """
+    openapi_schema = request.app.openapi()
+    return _build_catalog(openapi_schema)
