@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
+from app.utils.enums import DataFileSource
 from app.services.data_file_manager import ensure_fresh_data_file
 from app.services.private_suppliers_service import PrivateSuppliersService
 
@@ -51,7 +52,7 @@ async def download_source_file():
     Pass-through download of the current master CSV file.
     """
     try:
-        csv_path = ensure_fresh_data_file("niyud")
+        csv_path = ensure_fresh_data_file(DataFileSource.PRIVATE_SUPPLIERS)
     except HTTPException:
         raise
 

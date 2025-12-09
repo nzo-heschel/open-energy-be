@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from app.utils.enums import DataFileSource
 from app.services.data_file_manager import ensure_fresh_data_file
 
 LOCAL_CACHE = Path(os.getenv("SWITCHING_REQUESTS_CACHE", "switching_requests.csv"))
@@ -17,7 +18,7 @@ def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
     """
     Load the switching-requests CSV (or Excel), normalizing headers.
     """
-    csv_path = csv_path or ensure_fresh_data_file("tzarchan")
+    csv_path = csv_path or ensure_fresh_data_file(DataFileSource.SWITCHING_REQUESTS)
     df = None
     if csv_path.suffix.lower() in (".xls", ".xlsx"):
         try:

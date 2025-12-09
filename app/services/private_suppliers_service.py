@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from app.utils.date_utils import parse_date, to_iso_date
+from app.utils.enums import DataFileSource
 from app.services.data_file_manager import ensure_fresh_data_file
 
 DEFAULT_CSV_PATH = Path(os.getenv("PRIVATE_SUPPLIERS_CSV_PATH", "Files_Netunei_hashmal_mp_niyud.csv"))
@@ -24,7 +25,7 @@ class PrivateSupplierRecord:
 class PrivateSuppliersService:
     @staticmethod
     def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
-        csv_path = csv_path or ensure_fresh_data_file("niyud")
+        csv_path = csv_path or ensure_fresh_data_file(DataFileSource.PRIVATE_SUPPLIERS)
 
         df: Optional[pd.DataFrame] = None
         last_err: Optional[Exception] = None

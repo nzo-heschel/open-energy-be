@@ -1,9 +1,8 @@
-# app/main.py
+# app/main.py   from downloads folder 
 import os
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import energy
 from app.api.v1 import energy_overview
@@ -12,12 +11,21 @@ from app.api.v1 import private_suppliers
 from app.api.v1 import smp
 from app.api.v1 import smp_production_vs_marginal_price
 from app.api.v1 import switching_requests
+from app.api.v1 import api_catalog
+import asyncio
+import contextlib
+
+from fastapi.middleware.cors import CORSMiddleware
+
+
 from app.config import configure_global_proxy
+from app.tasks.file_expiry_notifier import run_file_expiry_notifier
 
 # Ensure all outbound HTTP clients respect the proxy before anything else runs.
 configure_global_proxy()
 
 app = FastAPI(title="Electricity Production Mix API")
+# _notifier_task: asyncio.Task | None = None
 
 origins = [
            "https://open-energy-fe.vercel.app", 
@@ -33,7 +41,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.middleware("http")
 async def internal_api_key_guard(request, call_next):
@@ -51,9 +58,15 @@ async def internal_api_key_guard(request, call_next):
             status_code=424,
             content={"detail": "INTERNAL_API_KEY is not configured."},
         )
-    provided = request.headers.get("x-api-key")
-    # If a key is provided, enforce it; otherwise allow (internal calls read key from env).
-    if provided and provided != expected:
+
+    # Accept header or query param; default to expected to avoid accidental 401s in internal calls.
+    provided = (
+        request.headers.get("x-api-key")
+        or request.query_params.get("api_key")
+        or expected
+    )
+    
+    if not provided or provided != expected:
         return JSONResponse(
             status_code=401,
             content={"detail": "Invalid API key."},
@@ -67,4 +80,18 @@ app.include_router(smp.router, prefix="/api/v1")
 app.include_router(smp_production_vs_marginal_price.router, prefix="/api/v1")
 app.include_router(private_suppliers.router, prefix="/api/v1")
 app.include_router(switching_requests.router, prefix="/api/v1")
-# app.include_router(smp.router, prefix="/api/v1")
+app.include_router(api_catalog.router, prefix="/api/v1")
+
+
+# @app.on_event("startup")
+# async def _start_notifier():
+#     global _notifier_task
+#     _notifier_task = asyncio.create_task(run_file_expiry_notifier())
+
+
+# @app.on_event("shutdown")
+# async def _stop_notifier():
+#     if _notifier_task:
+#         _notifier_task.cancel()
+#         with contextlib.suppress(asyncio.CancelledError):
+#             await _notifier_task
