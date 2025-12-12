@@ -1,0 +1,179 @@
+# =============================================================================
+# Open Energy Backend - Build & Deploy Pipeline
+# =============================================================================
+# This workflow builds a Docker image, pushes to ECR, and deploys to EC2
+#
+# REQUIRED GITHUB SECRETS:
+# -------------------------
+# AWS_ACCESS_KEY_ID       - AWS IAM user access key with ECR push permissions
+# AWS_SECRET_ACCESS_KEY   - AWS IAM user secret key
+# AWS_REGION              - AWS region (e.g., il-central-1)
+# AWS_ACCOUNT_ID          - AWS account ID (e.g., 123456789012)
+# ECR_REPOSITORY          - ECR repository name (e.g., open-energy-dev)
+# EC2_HOST                - EC2 instance IP or hostname
+# EC2_SSH_PRIVATE_KEY     - SSH private key for EC2 access (contents of id_ed25519)
+# EC2_SSH_USER            - SSH user (typically: ubuntu)
+# =============================================================================
+
+name: Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Allows manual trigger from GitHub Actions UI
+
+env:
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  build-and-deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      # -----------------------------------------------------------------------
+      # Checkout & Setup
+      # -----------------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for versioning
+
+      - name: Generate version tag
+        id: version
+        run: |
+          # Get the short commit SHA
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          
+          # Get the current date
+          DATE=$(date +'%Y%m%d')
+          
+          # Count commits for incremental build number
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          
+          # Generate version: v{build_number}-{date}-{sha}
+          VERSION="v${BUILD_NUMBER}-${DATE}-${SHORT_SHA}"
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "build_number=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+          
+          echo "=========================================="
+          echo "Generated Version: ${VERSION}"
+          echo "Build Number: ${BUILD_NUMBER}"
+          echo "Short SHA: ${SHORT_SHA}"
+          echo "=========================================="
+
+      # -----------------------------------------------------------------------
+      # AWS & ECR Setup
+      # -----------------------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set ECR repository URL
+        id: ecr
+        run: |
+          ECR_URL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}"
+          echo "url=${ECR_URL}" >> $GITHUB_OUTPUT
+          echo "ECR URL: ${ECR_URL}"
+
+      # -----------------------------------------------------------------------
+      # Build & Push Docker Image
+      # -----------------------------------------------------------------------
+      - name: Build Docker image
+        run: |
+          echo "Building image: ${{ steps.ecr.outputs.url }}:${{ steps.version.outputs.version }}"
+          
+          docker build \
+            --build-arg BUILD_VERSION=${{ steps.version.outputs.version }} \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg GIT_COMMIT=${{ github.sha }} \
+            --tag ${{ steps.ecr.outputs.url }}:${{ steps.version.outputs.version }} \
+            --tag ${{ steps.ecr.outputs.url }}:latest \
+            --tag ${{ steps.ecr.outputs.url }}:build-${{ steps.version.outputs.build_number }} \
+            .
+
+      - name: Push Docker image to ECR
+        run: |
+          echo "Pushing images to ECR..."
+          
+          # Push versioned tag
+          docker push ${{ steps.ecr.outputs.url }}:${{ steps.version.outputs.version }}
+          
+          # Push latest tag
+          docker push ${{ steps.ecr.outputs.url }}:latest
+          
+          # Push build number tag
+          docker push ${{ steps.ecr.outputs.url }}:build-${{ steps.version.outputs.build_number }}
+          
+          echo "=========================================="
+          echo "Pushed tags:"
+          echo "  - ${{ steps.version.outputs.version }}"
+          echo "  - latest"
+          echo "  - build-${{ steps.version.outputs.build_number }}"
+          echo "=========================================="
+
+      # -----------------------------------------------------------------------
+      # Deploy to EC2
+      # -----------------------------------------------------------------------
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          
+          # Add EC2 host to known_hosts to avoid prompt
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy to EC2
+        run: |
+          echo "Deploying to EC2: ${{ secrets.EC2_HOST }}"
+          echo "Image tag: ${{ steps.version.outputs.version }}"
+          
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.EC2_SSH_USER }}@${{ secrets.EC2_HOST }} << 'DEPLOY_SCRIPT'
+          
+          echo "=========================================="
+          echo "Starting deployment on EC2"
+          echo "Timestamp: $(date)"
+          echo "=========================================="
+          
+          # Run deploy script with the new image tag
+          sudo OVERRIDE_IMAGE_TAG="${{ steps.version.outputs.version }}" /usr/local/bin/deploy.sh
+          
+          echo "=========================================="
+          echo "Deployment completed!"
+          echo "=========================================="
+          DEPLOY_SCRIPT
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+
+      # -----------------------------------------------------------------------
+      # Summary
+      # -----------------------------------------------------------------------
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Number | \`${{ steps.version.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ steps.version.outputs.short_sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| ECR Repository | \`${{ secrets.ECR_REPOSITORY }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Target Host | \`${{ secrets.EC2_HOST }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
