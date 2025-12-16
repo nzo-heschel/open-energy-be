@@ -9,9 +9,11 @@ from app.services.noga_service import NogaService
 from app.services.energy_mix_processor import EnergyMixProcessor
 from app.utils.date_utils import resolve_date_range, to_iso_date, to_noga_date
 from app.utils.response_formatter import flatten_level2, format_categories
+from dotenv import load_dotenv
+
+load_dotenv()
 
 router = APIRouter()
-NOGA_TOKEN = os.getenv("NOGA_API_TOKEN")
 
 # Helper function to calculate hourly average (last hour data)
 def calculate_hourly_average(records):
@@ -51,10 +53,11 @@ async def get_energy_production_mix(
         start_dt, end_dt = today.replace(month=1, day=1), today
 
     try:
+        noga_token = os.getenv("NOGA_API_TOKEN")
         raw_data = await NogaService.fetch_production_mix(
             to_noga_date(start_dt),
             to_noga_date(end_dt),
-            NOGA_TOKEN,
+            noga_token,
         )
     except Exception as exc:
         raise HTTPException(status_code=424, detail=f"Failed to fetch production mix: {exc}")
@@ -89,10 +92,11 @@ async def export_energy_mix_to_excel(
 
     # Fetch REAL data
     try:
+        noga_token = os.getenv("NOGA_API_TOKEN")
         raw_data = await NogaService.fetch_production_mix(
             to_noga_date(start_dt),
             to_noga_date(end_dt),
-            NOGA_TOKEN,
+            noga_token,
         )
     except Exception as exc:
         raise HTTPException(status_code=424, detail=f"Failed to fetch production mix: {exc}")

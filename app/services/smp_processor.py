@@ -7,6 +7,10 @@ from typing import Dict, List, Optional
 
 # Broadened key detection to better match NOGA SMP payloads.
 PRICE_WITH_CONSTRAINT_KEYS = [
+    "day_Ahead_Constrained_Smp",
+    "day_ahead_constrained_smp",
+    "real_Time_Constrained_Smp",
+    "real_time_constrained_smp",
     "priceWithConstraints",
     "price_with_constraints",
     "pricewithconstraints",
@@ -19,6 +23,10 @@ PRICE_WITH_CONSTRAINT_KEYS = [
     "marginalPrice",
 ]
 PRICE_WITHOUT_CONSTRAINT_KEYS = [
+    "day_Ahead_Unconstrained_Smp",
+    "day_ahead_unconstrained_smp",
+    "real_Time_Unconstrained_Smp",
+    "real_time_unconstrained_smp",
     "priceWithoutConstraints",
     "price_without_constraints",
     "pricewithoutconstraints",
@@ -85,7 +93,7 @@ def _get_first_float(sample: Dict, keys: List[str], allow_fuzzy: bool = False) -
 
 class SMPProcessor:
     @staticmethod
-    def process_smp_data(raw_data: List[Dict], include_samples: bool) -> Dict:
+    def process_smp_data(raw_data: List[Dict], include_samples: bool, demand_lookup: Dict[str, float] | None = None) -> Dict:
         """
         Return SMP price with/without constraints plus net demand averages for charts.
         """
@@ -95,7 +103,7 @@ class SMPProcessor:
         else:
             days = raw_data or []
 
-        flattened = SMPProcessor._flatten(days)
+        flattened = SMPProcessor._flatten(days, demand_lookup or {})
         day_avg = SMPProcessor._aggregate(flattened, by="day")
         month_avg = SMPProcessor._aggregate(flattened, by="month")
 
@@ -129,7 +137,7 @@ class SMPProcessor:
         return payload
 
     @staticmethod
-    def _flatten(days: List[Dict]) -> List[Dict]:
+    def _flatten(days: List[Dict], demand_lookup: Dict[str, float]) -> List[Dict]:
         """
         Flatten NOGA daily payload into timestamped samples with price/net demand.
         """
@@ -140,6 +148,8 @@ class SMPProcessor:
                 day.get("productionMixData")
                 or day.get("forecastProductionMix")
                 or day.get("records")
+                or day.get("smpData")
+                or day.get("smpdata")
                 or day.get("data")
                 or []
             )
@@ -154,6 +164,8 @@ class SMPProcessor:
                 if price_without is None and price_with is not None:
                     price_without = price_with
                 demand_val = _get_first_float(sample, DEMAND_KEYS)
+                if demand_val is None:
+                    demand_val = demand_lookup.get(ts)
                 renewables_val = _get_first_float(sample, RENEWABLE_KEYS)
                 net_demand = demand_val - (renewables_val or 0) if demand_val is not None else None
 

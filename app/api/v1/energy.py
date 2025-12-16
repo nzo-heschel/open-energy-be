@@ -10,9 +10,11 @@ from app.services.noga_service import NogaService
 from app.utils.date_utils import resolve_date_range, to_iso_date, to_noga_date
 from app.utils.response_formatter import flatten_level2, format_categories
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 router = APIRouter(prefix="/energy", tags=["Energy"])
-NOGA_TOKEN = os.getenv("NOGA_API_TOKEN")
 # Keep default windows small to avoid slow/broken proxy downloads; override via env if needed.
 DEFAULT_RANGE_DAYS = int(os.getenv("ENERGY_PRODUCTION_MIX_DEFAULT_DAYS", "30"))
 
@@ -119,11 +121,12 @@ async def get_production_mix(
 
     start_dt, end_dt = resolve_date_range(start_date, end_date, default_days=DEFAULT_RANGE_DAYS)
 
+    noga_token = os.getenv("NOGA_API_TOKEN")
     try:
         raw_values = await NogaService.fetch_production_mix(
             to_noga_date(start_dt),
             to_noga_date(end_dt),
-            NOGA_TOKEN,
+            noga_token,
         )
     except Exception as e:
         raise HTTPException(status_code=424, detail=str(e))
@@ -172,10 +175,11 @@ async def export_energy_mix(
 
     start_dt, end_dt = resolve_date_range(start_date, end_date, default_days=DEFAULT_RANGE_DAYS)
 
+    noga_token = os.getenv("NOGA_API_TOKEN")
     raw_values = await NogaService.fetch_production_mix(
         to_noga_date(start_dt),
         to_noga_date(end_dt),
-        NOGA_TOKEN,
+        noga_token,
     )
     hourly_values = hourly_average(raw_values)
     level2 = _aggregate_level2(hourly_values)

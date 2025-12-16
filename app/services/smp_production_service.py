@@ -6,9 +6,20 @@ from typing import Dict, List, Optional
 from fastapi import HTTPException
 
 from app.services.smp_service import SMPService
+from app.services.demand_service import DemandService
 from app.utils.date_utils import to_iso_date, to_noga_date
 
-SMP_KEYS = ["smp", "SMP", "marginalPrice", "price", "priceWithConstraints"]
+SMP_KEYS = [
+    "day_Ahead_Constrained_Smp",
+    "day_Ahead_Unconstrained_Smp",
+    "real_Time_Constrained_Smp",
+    "real_Time_Unconstrained_Smp",
+    "priceWithConstraints",
+    "marginalPrice",
+    "price",
+    "smp",
+    "SMP",
+]
 DEMAND_KEYS = ["actual_Demand", "actualDemand", "demand"]
 RENEWABLE_KEYS = ["renewableSum", "renewable_sum", "renewable"]
 
@@ -87,6 +98,12 @@ class SMPProductionService:
             to_noga_date(end_dt),
             token,
         )
+        demand_data = await DemandService.fetch_demand_data(
+            to_noga_date(start_dt),
+            to_noga_date(end_dt),
+            None,
+        )
+        demand_lookup = DemandService.to_demand_lookup(demand_data)
 
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -106,6 +123,8 @@ class SMPProductionService:
                 day.get("productionMixData")
                 or day.get("forecastProductionMix")
                 or day.get("records")
+                or day.get("smpData")
+                or day.get("smpdata")
                 or []
             )
             for sample in samples:
@@ -120,6 +139,8 @@ class SMPProductionService:
                     (val for key in DEMAND_KEYS if (val := _as_float(sample.get(key))) is not None),
                     None,
                 )
+                if demand_value is None:
+                    demand_value = demand_lookup.get(timestamp)
                 renewables_value = next(
                     (val for key in RENEWABLE_KEYS if (val := _as_float(sample.get(key))) is not None),
                     None,
