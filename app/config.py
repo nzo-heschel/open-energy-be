@@ -38,4 +38,4 @@ def get_proxies() -> dict | None:
 
 
 # Backwards compatible alias.
-config_global_proxy = configure_global_proxy
+# config_global_proxy = configure_global_proxy

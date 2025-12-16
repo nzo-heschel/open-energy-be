@@ -18,11 +18,11 @@ import contextlib
 from fastapi.middleware.cors import CORSMiddleware
 
 
-from app.config import configure_global_proxy
+# from app.config import configure_global_proxy
 from app.tasks.file_expiry_notifier import run_file_expiry_notifier
 
 # Ensure all outbound HTTP clients respect the proxy before anything else runs.
-configure_global_proxy()
+# configure_global_proxy()
 
 app = FastAPI(title="Electricity Production Mix API")
 # _notifier_task: asyncio.Task | None = None

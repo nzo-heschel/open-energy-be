@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from requests.exceptions import ChunkedEncodingError
 from urllib3.exceptions import ProtocolError
 
-from app.config import configure_global_proxy, get_proxies
+from app.config import get_proxies
 BASE_URL = "https://apim-api.noga-iso.co.il/"
 
 
@@ -29,7 +29,7 @@ class NogaService:
         start, end: 'dd-mm-yyyy'
         token: NOGA API token
         """
-        configure_global_proxy()
+        # configure_global_proxy()
         path = "PRODUCTIONMIX/PRODMIXAPI/v1"
         headers = {
             "Content-Type": "application/json",

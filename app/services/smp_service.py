@@ -3,7 +3,7 @@ import time
 from typing import Dict, List
 import httpx
 
-from app.config import configure_global_proxy
+# from app.config import configure_global_proxy
 
 BASE_URL = "https://apim-api.noga-iso.co.il/"
 _CACHE: Dict[tuple[str, str], Dict] = {}
@@ -23,7 +23,7 @@ class SMPService:
         Fetch SMP data from the NOGA API using an async client and short-term caching.
         """
         # Ensure proxies are applied when the module is used directly.
-        configure_global_proxy()
+        # configure_global_proxy()
 
         cache_key = (start, end)
         now = time.time()
