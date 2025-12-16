@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/apis", tags=["API Catalog"])
-
+# TODO: remove comment (needed for redeploy)
 # Only surface public APIs (exclude admin/utility endpoints).
 _ALLOWED_ENDPOINTS = {
     "/api/v1/energy/overview",
