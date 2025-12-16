@@ -17,6 +17,7 @@ from app.api.v1 import renewable_potential_industry
 from app.api.v1 import smp
 from app.api.v1 import smp_production_vs_marginal_price
 from app.api.v1 import switching_requests
+from fastapi.middleware.cors import CORSMiddleware
 
 # from app.config import configure_global_proxy
 from app.tasks.file_expiry_notifier import run_file_expiry_notifier
@@ -27,6 +28,20 @@ from app.tasks.file_expiry_notifier import run_file_expiry_notifier
 app = FastAPI(title="Electricity Production Mix API")
 _notifier_task: asyncio.Task | None = None
 
+origins = [
+    "https://open-energy-fe.vercel.app",
+    "http://localhost:3000",
+    "https://open-energy-be-vo4yi.ondigitalocean.app",
+    "https://localhost:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def internal_api_key_guard(request, call_next):
