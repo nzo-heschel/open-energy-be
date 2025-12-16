@@ -1,6 +1,5 @@
 import json
 from datetime import datetime, timedelta
-import re
 from typing import Dict, List
 
 from http.client import IncompleteRead
@@ -11,14 +10,14 @@ from fastapi import HTTPException
 from requests.exceptions import ChunkedEncodingError
 from urllib3.exceptions import ProtocolError
 
-from app.config import get_proxies
+# Proxy helpers disabled while running without a proxy/VPN.
+# from app.config import (
+#     PROXY_VERIFY_SSL,
+#     configure_global_proxy,
+#     get_proxy_auth,
+#     get_proxies,
+# )
 BASE_URL = "https://apim-api.noga-iso.co.il/"
-
-
-def to_snake_case(s: str) -> str:
-    s = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", s)
-    s = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s)
-    return s.lower()
 
 
 class NogaService:
@@ -41,7 +40,8 @@ class NogaService:
         }
         url = BASE_URL + path
 
-        proxies = get_proxies()
+        # proxies = get_proxies()
+        # proxy_auth = get_proxy_auth()
 
         def _flatten_energy(result: Dict) -> List[Dict]:
             energy = result.get("energy", [])
@@ -49,7 +49,7 @@ class NogaService:
             for day_item in energy:
                 date = day_item.get("date")
                 time_items = day_item[list(day_item.keys())[1]]  # second key has time data
-                for time_item in (time_items or []):
+                for time_item in time_items:
                     value = {"date": date}
                     value.update(time_item)
                     values.append(value)
@@ -65,8 +65,10 @@ class NogaService:
                         headers=headers,
                         json=payload,
                         timeout=(10, 90),  # connect, read
-                        proxies=proxies,
+                        # proxies=proxies,
+                        # auth=proxy_auth,
                         stream=stream,  # avoid early full download
+                        # verify=PROXY_VERIFY_SSL,
                     )
                     # If proxy/NOGA rejects, surface a clean HTTPException.
                     try:
@@ -146,19 +148,19 @@ class NogaService:
         for v in values:
             agg["Non-renewables"] += sum([
                 v.get("coal", 0),
-                v.get("natural_gas", 0),
+                v.get("natural_Gas", 0),
                 v.get("mazut", 0)  # diesel
             ])
             agg["Renewables"] += sum([
-                v.get("photovoltaic", 0),
-                v.get("biogas", 0),
+                v.get("photoVoltaic", 0),
+                v.get("bio_Gas", 0),
                 v.get("wind", 0),
-                v.get("termo_soler", 0),
-                v.get("photovoltaic_integrated", 0)
+                v.get("termo_Soler", 0),
+                v.get("photovoltaicIntegrated", 0)
             ])
             agg["Other"] += sum([
                 v.get("other", 0),
-                v.get("pumped_storage", 0)
+                v.get("pumpedStorage", 0)
             ])
 
         return agg

@@ -73,20 +73,20 @@ class EnergyOverviewService:
         for h in hourly:
             # Fossil
             level2["fossil_energy"]["coal"] += sum_keys(h, ["coal"])
-            level2["fossil_energy"]["natural_gas"] += sum_keys(h, ["natural_gas"])
+            level2["fossil_energy"]["natural_gas"] += sum_keys(h, ["natural_Gas", "natural_gas"])
             level2["fossil_energy"]["diesel"] += sum_keys(h, ["mazut", "diesel"])
 
             # Renewable
             level2["renewable_energy"]["photovoltaic"] += sum_keys(
-                h, ["photovoltaic", "photovoltaic_integrated"]
+                h, ["photoVoltaic", "photovoltaic", "photovoltaicIntegrated"]
             )
-            level2["renewable_energy"]["biogas"] += sum_keys(h, ["biogas"])
+            level2["renewable_energy"]["biogas"] += sum_keys(h, ["bio_Gas", "biogas"])
             level2["renewable_energy"]["wind"] += sum_keys(h, ["wind"])
-            level2["renewable_energy"]["solar"] += sum_keys(h, ["termo_soler", "solar"])
+            level2["renewable_energy"]["solar"] += sum_keys(h, ["termo_Soler", "solar"])
 
             # Other
             level2["other"]["other"] += sum_keys(h, ["other"])
-            level2["other"]["pumped_storage"] += sum_keys(h, ["pumped_storage"])
+            level2["other"]["pumped_storage"] += sum_keys(h, ["pumpedStorage", "pumped_storage"])
 
         # Level-1 sums
         level1["fossil_energy"] = sum(level2["fossil_energy"].values())
@@ -126,7 +126,7 @@ class EnergyOverviewService:
     @staticmethod
     async def get_overview(start_date: str, end_date: str) -> Dict:
 
-        token = os.getenv("NOGA_API_TOKEN", "7b397cafa75b4a00848542829a588dac")
+        token = os.getenv("NOGA_API_TOKEN")
         start_dt = parse_date(start_date)
         end_dt = parse_date(end_date)
 

@@ -3,7 +3,8 @@ import time
 from typing import Dict, List
 import httpx
 
-# from app.config import configure_global_proxy
+# Proxy helpers disabled while running without a proxy/VPN.
+# from app.config import PROXY_VERIFY_SSL, configure_global_proxy, get_proxies
 
 BASE_URL = "https://apim-api.noga-iso.co.il/"
 _CACHE: Dict[tuple[str, str], Dict] = {}
@@ -36,6 +37,8 @@ class SMPService:
             "Cache-Control": "no-cache",
             "Ocp-Apim-Subscription-Key": token,
         }
+        # proxies = get_proxies()
+        # trust_env = proxies is None
 
         last_exc: Exception | None = None
         result = None
@@ -43,7 +46,9 @@ class SMPService:
         async with httpx.AsyncClient(
             base_url=BASE_URL,
             timeout=timeout,
-            trust_env=True,  # honor HTTP(S)_PROXY
+            # trust_env=trust_env,  # honor HTTP(S)_PROXY when set via env
+            # proxies=proxies,
+            # verify=PROXY_VERIFY_SSL,
         ) as client:
             for path in SMP_PATHS:
                 try:

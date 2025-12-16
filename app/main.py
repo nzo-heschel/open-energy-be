@@ -1,46 +1,32 @@
-# app/main.py   from downloads folder 
+# app/main.py
+import asyncio
+import contextlib
 import os
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from app.api.v1 import api_catalog
+from app.api.v1 import data_files
 from app.api.v1 import energy
 from app.api.v1 import energy_overview
-from app.api.v1 import data_files
 from app.api.v1 import private_suppliers
+from app.api.v1 import renewable_mix
+from app.api.v1 import renewable_transition
+from app.api.v1 import renewable_potential_industry
 from app.api.v1 import smp
 from app.api.v1 import smp_production_vs_marginal_price
 from app.api.v1 import switching_requests
-from app.api.v1 import api_catalog
-import asyncio
-import contextlib
-
-from fastapi.middleware.cors import CORSMiddleware
-
 
 # from app.config import configure_global_proxy
 from app.tasks.file_expiry_notifier import run_file_expiry_notifier
 
-# Ensure all outbound HTTP clients respect the proxy before anything else runs.
+# Proxy usage disabled while on VPN.
 # configure_global_proxy()
 
 app = FastAPI(title="Electricity Production Mix API")
-# _notifier_task: asyncio.Task | None = None
+_notifier_task: asyncio.Task | None = None
 
-origins = [
-           "https://open-energy-fe.vercel.app", 
-           "http://localhost:3000",
-           "https://open-energy-be-vo4yi.ondigitalocean.app",
-           "https://localhost:8000",
-           ]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 @app.middleware("http")
 async def internal_api_key_guard(request, call_next):
@@ -76,6 +62,9 @@ async def internal_api_key_guard(request, call_next):
 app.include_router(energy_overview.router, prefix="/api/v1")
 app.include_router(energy.router, prefix="/api/v1")
 app.include_router(data_files.router, prefix="/api/v1")
+app.include_router(renewable_mix.router, prefix="/api/v1")
+app.include_router(renewable_transition.router, prefix="/api/v1")
+app.include_router(renewable_potential_industry.router, prefix="/api/v1")
 app.include_router(smp.router, prefix="/api/v1")
 app.include_router(smp_production_vs_marginal_price.router, prefix="/api/v1")
 app.include_router(private_suppliers.router, prefix="/api/v1")
@@ -83,15 +72,15 @@ app.include_router(switching_requests.router, prefix="/api/v1")
 app.include_router(api_catalog.router, prefix="/api/v1")
 
 
-# @app.on_event("startup")
-# async def _start_notifier():
-#     global _notifier_task
-#     _notifier_task = asyncio.create_task(run_file_expiry_notifier())
+@app.on_event("startup")
+async def _start_notifier():
+    global _notifier_task
+    _notifier_task = asyncio.create_task(run_file_expiry_notifier())
 
 
-# @app.on_event("shutdown")
-# async def _stop_notifier():
-#     if _notifier_task:
-#         _notifier_task.cancel()
-#         with contextlib.suppress(asyncio.CancelledError):
-#             await _notifier_task
+@app.on_event("shutdown")
+async def _stop_notifier():
+    if _notifier_task:
+        _notifier_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _notifier_task

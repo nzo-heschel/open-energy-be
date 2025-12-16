@@ -5,11 +5,9 @@ from app.services.smp_production_service import SMPProductionService
 from app.utils.date_utils import resolve_date_range
 
 router = APIRouter(prefix="/energy/smp-production-vs-marginal-price", tags=["SMP Production vs Marginal Price"])
-# Prefer SMP_TOKEN; fall back to NOGA_API_TOKEN; finally, use legacy default token for compatibility.
 SMP_TOKEN = (
     os.getenv("SMP_TOKEN")
     or os.getenv("NOGA_API_TOKEN")
-    or "7b397cafa75b4a00848542829a588dac"
 )
 
 

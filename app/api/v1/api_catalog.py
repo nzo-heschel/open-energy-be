@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/apis", tags=["API Catalog"])
-# TODO: remove comment (needed for redeploy)
+
 # Only surface public APIs (exclude admin/utility endpoints).
 _ALLOWED_ENDPOINTS = {
     "/api/v1/energy/overview",
@@ -35,28 +35,28 @@ LEGACY_EXAMPLES: Dict[tuple[str, str], Dict[str, Any]] = {
                         "category_name": "renewables",
                         "total_value": 12193200.523333317,
                         "sub_categories": [
-                            {"name": "photo_voltaic", "value": 10518690.135},
-                            {"name": "biogas", "value": 83390.60166666686},
-                            {"name": "wind", "value": 840861.7166666664},
-                            {"name": "solar_thermal", "value": 750258.0699999835},
-                            {"name": "pv_storage", "value": 0},
+                            {"sub_category_name": "photo_voltaic", "value": 10518690.135},
+                            {"sub_category_name": "biogas", "value": 83390.60166666686},
+                            {"sub_category_name": "wind", "value": 840861.7166666664},
+                            {"sub_category_name": "solar_thermal", "value": 750258.0699999835},
+                            {"sub_category_name": "pv_storage", "value": 0},
                         ],
                     },
                     {
                         "category_name": "non_renewables",
                         "total_value": 66691009.1500001,
                         "sub_categories": [
-                            {"name": "coal", "value": 8057076.353333344},
-                            {"name": "natural_gas", "value": 58628439.924166754},
-                            {"name": "diesel", "value": 5492.8725},
+                            {"sub_category_name": "coal", "value": 8057076.353333344},
+                            {"sub_category_name": "natural_gas", "value": 58628439.924166754},
+                            {"sub_category_name": "diesel", "value": 5492.8725},
                         ],
                     },
                     {
                         "category_name": "other",
                         "total_value": 1570473.8825000045,
                         "sub_categories": [
-                            {"name": "other", "value": 265147.95249999943},
-                            {"name": "pumped_storage", "value": 1305325.930000005},
+                            {"sub_category_name": "other", "value": 265147.95249999943},
+                            {"sub_category_name": "pumped_storage", "value": 1305325.930000005},
                         ],
                     },
                 ],
@@ -106,24 +106,24 @@ LEGACY_EXAMPLES: Dict[tuple[str, str], Dict[str, Any]] = {
                 "end_date": "2025-12-05",
                 "filter": "month",
                 "level1": {
-                    "non-renewables": 4848764.2775,
-                    "renewables": 746006.005,
-                    "other": 145755.1475,
+                    "Non-renewables": 4848764.2775,
+                    "Renewables": 746006.005,
+                    "Other": 145755.1475,
                 },
                 "level2": {
-                    "non-renewables": {
+                    "Non-renewables": {
                         "coal": 426128.9025,
                         "natural_gas": 4422635.375,
                         "diesel": 0,
                     },
-                    "renewables": {
+                    "Renewables": {
                         "photoVoltaic": 581749.4041666667,
                         "biogas": 6464.578333333333,
                         "wind": 69364.78416666666,
                         "solar_thermal": 31179.23,
                         "pv_storage": 57248.00833333333,
                     },
-                    "other": {
+                    "Other": {
                         "other": 19267.07,
                         "pumped_storage": 126488.0775,
                     },
@@ -135,28 +135,28 @@ LEGACY_EXAMPLES: Dict[tuple[str, str], Dict[str, Any]] = {
                         "category_name": "renewables",
                         "total_value": 746006.005,
                         "sub_categories": [
-                            {"name": "photo_voltaic", "value": 581749.4041666667},
-                            {"name": "biogas", "value": 6464.578333333333},
-                            {"name": "wind", "value": 69364.78416666666},
-                            {"name": "solar_thermal", "value": 31179.23},
-                            {"name": "pv_storage", "value": 57248.00833333333},
+                            {"sub_category_name": "photo_voltaic", "value": 581749.4041666667},
+                            {"sub_category_name": "biogas", "value": 6464.578333333333},
+                            {"sub_category_name": "wind", "value": 69364.78416666666},
+                            {"sub_category_name": "solar_thermal", "value": 31179.23},
+                            {"sub_category_name": "pv_storage", "value": 57248.00833333333},
                         ],
                     },
                     {
                         "category_name": "non_renewables",
                         "total_value": 4848764.2775,
                         "sub_categories": [
-                            {"name": "coal", "value": 426128.9025},
-                            {"name": "natural_gas", "value": 4422635.375},
-                            {"name": "diesel", "value": 0},
+                            {"sub_category_name": "coal", "value": 426128.9025},
+                            {"sub_category_name": "natural_gas", "value": 4422635.375},
+                            {"sub_category_name": "diesel", "value": 0},
                         ],
                     },
                     {
                         "category_name": "other",
                         "total_value": 145755.1475,
                         "sub_categories": [
-                            {"name": "other", "value": 19267.07},
-                            {"name": "pumped_storage", "value": 126488.0775},
+                            {"sub_category_name": "other", "value": 19267.07},
+                            {"sub_category_name": "pumped_storage", "value": 126488.0775},
                         ],
                     },
                 ],

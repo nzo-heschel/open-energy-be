@@ -11,7 +11,7 @@ from app.utils.date_utils import resolve_date_range, to_iso_date, to_noga_date
 from app.utils.response_formatter import flatten_level2, format_categories
 
 router = APIRouter()
-NOGA_TOKEN = os.getenv("NOGA_API_TOKEN", "7b397cafa75b4a00848542829a588dac")
+NOGA_TOKEN = os.getenv("NOGA_API_TOKEN")
 
 # Helper function to calculate hourly average (last hour data)
 def calculate_hourly_average(records):

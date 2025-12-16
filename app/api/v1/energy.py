@@ -12,7 +12,7 @@ from app.utils.response_formatter import flatten_level2, format_categories
 from datetime import datetime
 
 router = APIRouter(prefix="/energy", tags=["Energy"])
-NOGA_TOKEN = os.getenv("NOGA_API_TOKEN", "7b397cafa75b4a00848542829a588dac")
+NOGA_TOKEN = os.getenv("NOGA_API_TOKEN")
 # Keep default windows small to avoid slow/broken proxy downloads; override via env if needed.
 DEFAULT_RANGE_DAYS = int(os.getenv("ENERGY_PRODUCTION_MIX_DEFAULT_DAYS", "30"))
 
@@ -50,31 +50,31 @@ def _aggregate_level2(hourly_values):
     Aggregate hourly values into Delivery-1 Level-2 buckets.
     """
     level2 = {
-        "non_renewables": {
+        "Non-renewables": {
             "coal": sum(v.get("coal", 0) for v in hourly_values),
             "natural_gas": sum(v.get("natural_Gas", 0) for v in hourly_values),
             "diesel": sum(v.get("mazut", 0) for v in hourly_values),
         },
-        "renewables": {
-            "photovoltaic": sum(v.get("photoVoltaic", 0) for v in hourly_values),
+        "Renewables": {
+            "photoVoltaic": sum(v.get("photoVoltaic", 0) for v in hourly_values),
             "biogas": sum(v.get("bio_Gas", 0) for v in hourly_values),
             "wind": sum(v.get("wind", 0) for v in hourly_values),
             "solar_thermal": sum(v.get("termo_Soler", 0) for v in hourly_values),
             "pv_storage": sum(v.get("photovoltaicIntegrated", 0) for v in hourly_values),
         },
-        "other": {
+        "Other": {
             "other": sum(v.get("other", 0) for v in hourly_values),
             "pumped_storage": sum(v.get("pumpedStorage", 0) for v in hourly_values),
-        },
+        }
     }
     return level2
 
 
 def _aggregate_level1(level2: Dict) -> Dict:
     return {
-        "non_renewables": sum(level2["non_renewables"].values()),
-        "renewables": sum(level2["renewables"].values()),
-        "other": sum(level2["other"].values()),
+        "Non-renewables": sum(level2["Non-renewables"].values()),
+        "Renewables": sum(level2["Renewables"].values()),
+        "Other": sum(level2["Other"].values()),
     }
 
 
@@ -139,7 +139,7 @@ async def get_production_mix(
     categories = format_categories(flatten_level2(level2))
     total_generation = sum(level1.values())
     renewable_share = (
-        round((level1["renewables"] / total_generation) * 100, 2)
+        round((level1["Renewables"] / total_generation) * 100, 2)
         if total_generation else 0
     )
 

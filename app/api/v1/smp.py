@@ -14,7 +14,6 @@ router = APIRouter(prefix="/energy/smp", tags=["SMP"])
 SMP_TOKEN = (
     os.getenv("SMP_TOKEN")
     or os.getenv("NOGA_API_TOKEN")
-    or "7b397cafa75b4a00848542829a588dac"
 )
 
 @router.get("/")
