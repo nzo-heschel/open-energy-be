@@ -19,20 +19,25 @@ from app.api.v1 import smp_production_vs_marginal_price
 from app.api.v1 import switching_requests
 from fastapi.middleware.cors import CORSMiddleware
 
+
 # from app.config import configure_global_proxy
 from app.tasks.file_expiry_notifier import run_file_expiry_notifier
 
 # Proxy usage disabled while on VPN.
 # configure_global_proxy()
 
+
+
 app = FastAPI(title="Electricity Production Mix API")
 _notifier_task: asyncio.Task | None = None
 
+
+
 origins = [
-    "https://open-energy-fe.vercel.app",
-    "http://localhost:3000",
-    "https://open-energy-be-vo4yi.ondigitalocean.app",
-    "https://localhost:8000",
+           "https://open-energy-fe.vercel.app",
+           "http://localhost:3000",
+           "https://open-energy-be-vo4yi.ondigitalocean.app",
+           "https://localhost:8000",
 ]
 
 app.add_middleware(
@@ -42,6 +47,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.middleware("http")
 async def internal_api_key_guard(request, call_next):
