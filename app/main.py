@@ -34,10 +34,10 @@ _notifier_task: asyncio.Task | None = None
 
 
 origins = [
-           "https://open-energy-fe.vercel.app",
-           "http://localhost:3000",
-           "https://open-energy-be-vo4yi.ondigitalocean.app",
-           "https://localhost:8000",
+    "https://open-energy-fe.vercel.app",
+    "http://localhost:3000",
+    "https://open-energy-be-vo4yi.ondigitalocean.app",
+    "https://localhost:8000",
 ]
 
 app.add_middleware(
