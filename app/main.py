@@ -67,7 +67,7 @@ async def internal_api_key_guard(request, call_next):
         )
 
     # Accept header or query param; default to expected to avoid accidental 401s in internal calls.
-    provided = request.headers.get("x-api-key")
+    provided = request.headers.get("X-Api-Key")
     
     if not provided or provided != expected:
         return JSONResponse(
