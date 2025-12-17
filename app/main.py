@@ -32,23 +32,6 @@ app = FastAPI(title="Electricity Production Mix API")
 _notifier_task: asyncio.Task | None = None
 
 
-
-origins = [
-    "https://open-energy-fe.vercel.app",
-    "http://localhost:3000",
-    "https://open-energy-be-vo4yi.ondigitalocean.app",
-    "https://localhost:8000",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 @app.middleware("http")
 async def internal_api_key_guard(request, call_next):
     """
@@ -77,6 +60,22 @@ async def internal_api_key_guard(request, call_next):
             content={"detail": "Invalid API key."},
         )
     return await call_next(request)
+
+
+origins = [
+    "https://open-energy-fe.vercel.app",
+    "http://localhost:3000",
+    "https://open-energy-be-vo4yi.ondigitalocean.app",
+    "https://localhost:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(energy_overview.router, prefix="/api/v1")
 app.include_router(energy.router, prefix="/api/v1")
