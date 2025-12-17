@@ -55,6 +55,8 @@ async def internal_api_key_guard(request, call_next):
     Enforce INTERNAL_API_KEY for all routes without exposing it in docs.
     """
     # Allow public docs and OpenAPI schema.
+    if request.method == "OPTIONS":
+        return await call_next(request)
     path = request.url.path
     if path.startswith(("/docs", "/openapi.json", "/redoc")):
         return await call_next(request)
