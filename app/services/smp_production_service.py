@@ -9,16 +9,36 @@ from app.services.smp_service import SMPService
 from app.services.demand_service import DemandService
 from app.utils.date_utils import to_iso_date, to_noga_date
 
-SMP_KEYS = [
+PRICE_WITH_CONSTRAINT_KEYS = [
     "day_Ahead_Constrained_Smp",
-    "day_Ahead_Unconstrained_Smp",
+    "day_ahead_constrained_smp",
     "real_Time_Constrained_Smp",
-    "real_Time_Unconstrained_Smp",
+    "real_time_constrained_smp",
     "priceWithConstraints",
-    "marginalPrice",
-    "price",
+    "price_with_constraints",
+    "pricewithconstraints",
+    "marginalPriceWithConstraints",
+    "marginalpricewithconstraints",
+    "smpWithConstraints",
+    "smp_with_constraints",
     "smp",
+    "price",
+    "marginalPrice",
     "SMP",
+]
+PRICE_WITHOUT_CONSTRAINT_KEYS = [
+    "day_Ahead_Unconstrained_Smp",
+    "day_ahead_unconstrained_smp",
+    "real_Time_Unconstrained_Smp",
+    "real_time_unconstrained_smp",
+    "priceWithoutConstraints",
+    "price_without_constraints",
+    "pricewithoutconstraints",
+    "marginalPriceWithoutConstraints",
+    "marginalpricewithoutconstraints",
+    "smpWithoutConstraints",
+    "smp_without_constraints",
+    "smp_no_constraints",
 ]
 DEMAND_KEYS = ["actual_Demand", "actualDemand", "demand"]
 RENEWABLE_KEYS = ["renewableSum", "renewable_sum", "renewable"]
@@ -31,6 +51,29 @@ def _as_float(value) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _get_first_float(sample: Dict, keys: List[str], allow_fuzzy: bool = False) -> Optional[float]:
+    lowered = {k.lower(): v for k, v in sample.items()}
+    for key in keys:
+        if key in sample and (val := _as_float(sample.get(key))) is not None:
+            return val
+        key_lower = key.lower()
+        if key_lower in lowered and (val := _as_float(lowered.get(key_lower))) is not None:
+            return val
+
+    if not allow_fuzzy:
+        return None
+
+    for k, v in sample.items():
+        if not isinstance(v, (int, float, str)):
+            continue
+        k_lower = k.lower()
+        if "price" in k_lower or "smp" in k_lower:
+            val = _as_float(v)
+            if val is not None:
+                return val
+    return None
 
 
 def _iso_timestamp(date_str: str, time_str: str | None) -> str:
@@ -75,17 +118,32 @@ class SMPProductionService:
             except Exception:
                 continue
             key = dt.strftime("%Y-%m") if period == "month" else dt.date().isoformat()
-            bucket = buckets.setdefault(key, {"sum": 0.0, "count": 0})
-            if item.get("smp") is not None:
-                bucket["sum"] += item["smp"]  # type: ignore
-                bucket["count"] += 1
+            bucket = buckets.setdefault(
+                key,
+                {
+                    "with_sum": 0.0,
+                    "without_sum": 0.0,
+                    "count_with": 0,
+                    "count_without": 0,
+                },
+            )
+            if item.get("price_with_constraints") is not None:
+                bucket["with_sum"] += item["price_with_constraints"]  # type: ignore
+                bucket["count_with"] += 1  # type: ignore
+            if item.get("price_without_constraints") is not None:
+                bucket["without_sum"] += item["price_without_constraints"]  # type: ignore
+                bucket["count_without"] += 1  # type: ignore
 
         aggregated: List[Dict] = []
         for key, values in buckets.items():
+            avg_with = values["with_sum"] / values["count_with"] if values["count_with"] else None
+            avg_without = values["without_sum"] / values["count_without"] if values["count_without"] else None
             aggregated.append(
                 {
                     "period": key,
-                    "avg_smp": values["sum"] / values["count"] if values["count"] else None,
+                    "avg_smp": avg_with if avg_with is not None else avg_without,
+                    "price_with_constraints": avg_with,
+                    "price_without_constraints": avg_without,
                 }
             )
         aggregated.sort(key=lambda x: x["period"])
@@ -116,6 +174,8 @@ class SMPProductionService:
         combined_series: List[Dict] = []
         correlation: List[Dict] = []
         daily_sums: Dict[str, float] = {}
+        daily_sums_with: Dict[str, float] = {}
+        daily_sums_without: Dict[str, float] = {}
 
         for day in days:
             date_str = day.get("date") or day.get("day") or ""
@@ -131,10 +191,13 @@ class SMPProductionService:
                 time_str = sample.get("time") or sample.get("hour") or sample.get("timestamp")
                 timestamp = _iso_timestamp(date_str, time_str)
 
-                smp_value = next(
-                    (val for key in SMP_KEYS if (val := _as_float(sample.get(key))) is not None),
-                    None,
-                )
+                price_with = _get_first_float(sample, PRICE_WITH_CONSTRAINT_KEYS, allow_fuzzy=True)
+                price_without = _get_first_float(sample, PRICE_WITHOUT_CONSTRAINT_KEYS, allow_fuzzy=True)
+                if price_with is None and price_without is not None:
+                    price_with = price_without
+                if price_without is None and price_with is not None:
+                    price_without = price_with
+                smp_value = price_with if price_with is not None else price_without
                 demand_value = next(
                     (val for key in DEMAND_KEYS if (val := _as_float(sample.get(key))) is not None),
                     None,
@@ -149,10 +212,24 @@ class SMPProductionService:
                 if demand_value is not None:
                     net_demand = demand_value - (renewables_value or 0)
 
+                if price_with is not None or price_without is not None:
+                    smp_series.append(
+                        {
+                            "timestamp": timestamp,
+                            "smp": smp_value,
+                            "price_with_constraints": price_with,
+                            "price_without_constraints": price_without,
+                        }
+                    )
                 if smp_value is not None:
-                    smp_series.append({"timestamp": timestamp, "smp": smp_value})
                     day_key = _day_key_iso(date_str)
                     daily_sums[day_key] = daily_sums.get(day_key, 0.0) + smp_value
+                if price_with is not None:
+                    day_key = _day_key_iso(date_str)
+                    daily_sums_with[day_key] = daily_sums_with.get(day_key, 0.0) + price_with
+                if price_without is not None:
+                    day_key = _day_key_iso(date_str)
+                    daily_sums_without[day_key] = daily_sums_without.get(day_key, 0.0) + price_without
 
                 if net_demand is not None:
                     net_demand_series.append({"timestamp": timestamp, "net_demand": net_demand})
@@ -162,6 +239,8 @@ class SMPProductionService:
                         {
                             "timestamp": timestamp,
                             "smp": smp_value,
+                            "price_with_constraints": price_with,
+                            "price_without_constraints": price_without,
                             "net_demand": net_demand,
                         }
                     )
@@ -183,14 +262,74 @@ class SMPProductionService:
         combined_series.sort(key=lambda x: x["timestamp"])
 
         daily_smp = []
-        for day, total in daily_sums.items():
+        for day in sorted(daily_sums.keys()):
+            total = daily_sums[day]
             avg = total / 48 if 48 else 0
-            daily_smp.append({"date": day, "daily_smp_avg": avg})
+            with_total = daily_sums_with.get(day)
+            without_total = daily_sums_without.get(day)
+            daily_smp.append(
+                {
+                    "date": day,
+                    "daily_smp_avg": avg,
+                    "daily_smp_avg_with_constraints": (
+                        with_total / 48 if with_total is not None else None
+                    ),
+                    "daily_smp_avg_without_constraints": (
+                        without_total / 48 if without_total is not None else None
+                    ),
+                }
+            )
         daily_smp.sort(key=lambda x: x["date"])
 
         # Aggregations for month/year views (driven by start/end only)
         daily_view = SMPProductionService._aggregate(smp_series, period="day")
-        monthly_view = SMPProductionService._aggregate(smp_series, period="month")
+
+        running_monthly_averages = []
+        monthly_sums_with: Dict[str, float] = {}
+        monthly_counts_with: Dict[str, int] = {}
+        monthly_sums_without: Dict[str, float] = {}
+        monthly_counts_without: Dict[str, int] = {}
+
+        for daily_item in daily_view:
+            daily_period = daily_item["period"]
+            month_key = daily_period[:7]
+
+            with_val = daily_item.get("price_with_constraints")
+            without_val = daily_item.get("price_without_constraints")
+            if with_val is None and without_val is None:
+                continue
+
+            if with_val is not None:
+                current_sum = monthly_sums_with.get(month_key, 0.0)
+                current_count = monthly_counts_with.get(month_key, 0)
+                monthly_sums_with[month_key] = current_sum + with_val
+                monthly_counts_with[month_key] = current_count + 1
+
+            if without_val is not None:
+                current_sum = monthly_sums_without.get(month_key, 0.0)
+                current_count = monthly_counts_without.get(month_key, 0)
+                monthly_sums_without[month_key] = current_sum + without_val
+                monthly_counts_without[month_key] = current_count + 1
+
+            avg_with = (
+                monthly_sums_with.get(month_key, 0.0) / monthly_counts_with.get(month_key, 0)
+                if monthly_counts_with.get(month_key)
+                else None
+            )
+            avg_without = (
+                monthly_sums_without.get(month_key, 0.0) / monthly_counts_without.get(month_key, 0)
+                if monthly_counts_without.get(month_key)
+                else None
+            )
+            running_monthly_averages.append(
+                {
+                    "period": daily_period,
+                    "avg_smp": avg_with if avg_with is not None else avg_without,
+                    "price_with_constraints": avg_with,
+                    "price_without_constraints": avg_without,
+                }
+            )
+        monthly_view = running_monthly_averages
 
         days_delta = (end_dt - start_dt).days
         if days_delta <= 1:
@@ -209,6 +348,5 @@ class SMPProductionService:
             "combined_series": combined_series,
             "correlation": correlation,
             "daily_smp": daily_smp,
-            "daily_average": daily_view,
             "monthly_average": monthly_view,
         }

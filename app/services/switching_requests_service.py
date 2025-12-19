@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -12,6 +13,36 @@ from app.utils.enums import DataFileSource
 from app.services.data_file_manager import ensure_fresh_data_file
 
 LOCAL_CACHE = Path(os.getenv("SWITCHING_REQUESTS_CACHE", "switching_requests.csv"))
+
+STATUS_COLUMN_PATTERNS = [
+    "status",
+    "request status",
+    "\u05e1\u05d8\u05d8\u05d5\u05e1",
+    "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05d1\u05e7\u05e9\u05d4",
+    "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05d1\u05e7\u05e9\u05d5\u05ea",
+]
+REJECTION_COLUMN_PATTERNS = [
+    "rejection reason",
+    "reject reason",
+    "rejection",
+    "reject",
+    "decline",
+    "denied",
+    "\u05e1\u05d9\u05d1\u05ea \u05d3\u05d7\u05d9\u05d4",
+    "\u05e1\u05d9\u05d1\u05ea \u05d3\u05d7\u05d9\u05d9\u05d4",
+    "\u05e1\u05d9\u05d1\u05d4 \u05dc\u05d3\u05d7\u05d9\u05d4",
+    "\u05e1\u05d9\u05d1\u05d4 \u05dc\u05d3\u05d7\u05d9\u05d9\u05d4",
+    "\u05e1\u05d9\u05d1\u05ea \u05e1\u05d8\u05d8\u05d5\u05e1",
+    "\u05e1\u05d9\u05d1\u05d5\u05ea \u05dc\u05e1\u05d8\u05d8\u05d5\u05e1",
+    "\u05e4\u05d9\u05e8\u05d5\u05d8 \u05e1\u05d9\u05d1\u05ea \u05e1\u05d8\u05d8\u05d5\u05e1",
+]
+STATUS_EXCLUDE_PATTERNS = [
+    "reason",
+    "reject",
+    "rejection",
+    "\u05e1\u05d9\u05d1\u05d4",
+    "\u05d3\u05d7\u05d9\u05d4",
+]
 
 
 def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
@@ -37,6 +68,39 @@ def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
 
     df.columns = [c.replace("\ufeff", "").strip() for c in df.columns]
     return df
+
+
+def _normalize_col_name(value: str) -> str:
+    text = str(value or "").strip().lower()
+    text = text.replace("\ufeff", "").replace("\u00a0", " ")
+    return re.sub(r"[\s/._-]+", "", text)
+
+
+def _find_column(
+    columns: List[str],
+    patterns: List[str],
+    exclude_patterns: Optional[List[str]] = None,
+) -> Optional[str]:
+    normalized = [(_normalize_col_name(col), col) for col in columns]
+    excludes = [_normalize_col_name(pat) for pat in (exclude_patterns or []) if pat]
+
+    def is_excluded(normalized_name: str) -> bool:
+        return any(ex and ex in normalized_name for ex in excludes)
+
+    for pattern in patterns:
+        pattern_norm = _normalize_col_name(pattern)
+        for normalized_name, col in normalized:
+            if normalized_name == pattern_norm and not is_excluded(normalized_name):
+                return col
+
+    for pattern in patterns:
+        pattern_norm = _normalize_col_name(pattern)
+        if not pattern_norm:
+            continue
+        for normalized_name, col in normalized:
+            if pattern_norm in normalized_name and not is_excluded(normalized_name):
+                return col
+    return None
 
 
 def _normalize_customer_type(value: str) -> str:
@@ -127,13 +191,16 @@ def build_payload(customer_type: Optional[str] = None, csv_path: Optional[Path] 
     df = _filter_customer_type(df, customer_type)
 
     # Column detection for status/rejection if present.
-    cols_lower = {c.lower(): c for c in df.columns}
-    status_col = next((cols_lower[c] for c in cols_lower if "status" in c or "סטטוס" in c), None)
-    rejection_col = next((cols_lower[c] for c in cols_lower if "reject" in c or "דחייה" in c), None)
-    region_col = next((c for c in df.columns if "מחוז" in c), None)
-    voltage_col = next((c for c in df.columns if "מתח" in c), None)
-    meter_col = next((c for c in df.columns if "מונה" in c), None)
-    regulation_col = next((c for c in df.columns if "אסדרה" in c), None)
+    status_col = _find_column(
+        df.columns,
+        STATUS_COLUMN_PATTERNS,
+        exclude_patterns=STATUS_EXCLUDE_PATTERNS,
+    )
+    rejection_col = _find_column(df.columns, REJECTION_COLUMN_PATTERNS)
+    region_col = next((c for c in df.columns if "????" in c), None)
+    voltage_col = next((c for c in df.columns if "???" in c), None)
+    meter_col = next((c for c in df.columns if "????" in c), None)
+    regulation_col = next((c for c in df.columns if "?????" in c), None)
 
     charts = {
         "by_customer_type": {

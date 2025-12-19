@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -48,13 +49,26 @@ class PrivateSuppliersService:
         df.columns = [col.replace("\ufeff", "").strip() for col in df.columns]
 
         # Resolve column names even if slightly different in the source.
+        def normalize_col(value: str) -> str:
+            text = str(value or "").strip().lower()
+            text = text.replace("\ufeff", "").replace("\u00a0", " ")
+            return re.sub(r"[\s/._-]+", "", text)
+
+        normalized_cols = {normalize_col(col): col for col in df.columns}
+
         def resolve_column(possible: list[str], required: bool = True) -> Optional[str]:
             for name in possible:
                 if name in df.columns:
                     return name
+            for name in possible:
+                normalized = normalize_col(name)
+                if normalized in normalized_cols:
+                    return normalized_cols[normalized]
             for col in df.columns:
+                col_norm = normalize_col(col)
                 for name in possible:
-                    if all(part in col for part in name.split()):
+                    name_norm = normalize_col(name)
+                    if name_norm and name_norm in col_norm:
                         return col
             if not required:
                 return None
@@ -65,6 +79,10 @@ class PrivateSuppliersService:
             "\u05e9\u05e0\u05d4/\u05d7\u05d5\u05d3\u05e9",
             "\u05e9\u05e0\u05d4 / \u05d7\u05d5\u05d3\u05e9",
             "\u05e9\u05e0\u05d4/\u00a0\u05d7\u05d5\u05d3\u05e9",
+            "year/month",
+            "year_month",
+            "year month",
+            "month",
         ]
         year_month_col = resolve_column(year_month_candidates)
         if year_month_col is None:
@@ -87,6 +105,11 @@ class PrivateSuppliersService:
             [
                 "\u05de\u05e1\u05e4\u05e8 \u05d1\u05e7\u05e9\u05d5\u05ea",
                 "\u05e1\u05d4\"\u05db \u05d1\u05e7\u05e9\u05d5\u05ea",
+                "\u05de\u05e1\u05e4\u05e8 \u05e6\u05e8\u05db\u05e0\u05d9\u05dd",
+                "\u05e1\u05d4\"\u05db \u05e6\u05e8\u05db\u05e0\u05d9\u05dd",
+                "total consumers",
+                "total requests",
+                "total",
             ],
             required=False,
         )
@@ -110,12 +133,34 @@ class PrivateSuppliersService:
             [
                 "\u05d1\u05d9\u05ea\u05d9/ \u05dc\u05d0 \u05d1\u05d9\u05ea\u05d9",
                 "\u05d1\u05d9\u05ea\u05d9/\u05dc\u05d0 \u05d1\u05d9\u05ea\u05d9",
+                "\u05d1\u05d9\u05ea\u05d9 / \u05dc\u05d0 \u05d1\u05d9\u05ea\u05d9",
+                "\u05de\u05d2\u05d6\u05e8",
+                "sector",
             ],
             required=False,
         )
-        meter_col = resolve_column(["\u05e1\u05d5\u05d2 \u05d0\u05e1\u05d3\u05e8\u05d4"], required=False)
+        meter_col = resolve_column(
+            [
+                "\u05e1\u05d5\u05d2 \u05d0\u05e1\u05d3\u05e8\u05d4",
+                "\u05e1\u05d5\u05d2 \u05d4\u05de\u05d5\u05e0\u05d4",
+                "\u05e1\u05d5\u05d2 \u05de\u05d5\u05e0\u05d4",
+                "meter type",
+            ],
+            required=False,
+        )
         location_col = resolve_column(
-            ["\u05ea\u05d7\u05e8\u05d5\u05ea \u05d1\u05d0\u05e1\u05e4\u05e7\u05d4/ \u05d0\u05e1\u05d3\u05e8\u05d4 \u05e7\u05d9\u05d9\u05de\u05ea"],
+            [
+                "\u05ea\u05d7\u05e8\u05d5\u05ea \u05d1\u05d0\u05e1\u05e4\u05e7\u05d4/ \u05d0\u05e1\u05d3\u05e8\u05d4 \u05e7\u05d9\u05d9\u05de\u05ea",
+                "\u05ea\u05d7\u05e8\u05d5\u05ea \u05d1\u05d0\u05e1\u05e4\u05e7\u05d4 / \u05d0\u05e1\u05d3\u05e8\u05d4 \u05e7\u05d9\u05d9\u05de\u05ea",
+                "\u05de\u05d7\u05d5\u05d6",
+                "\u05e9\u05dd \u05de\u05d7\u05d5\u05d6",
+                "\u05e9\u05dd \u05d9\u05d9\u05e9\u05d5\u05d1",
+                "\u05d9\u05d9\u05e9\u05d5\u05d1",
+                "\u05d0\u05d6\u05d5\u05e8",
+                "region",
+                "district",
+                "location",
+            ],
             required=False,
         )
 
@@ -228,8 +273,8 @@ class PrivateSuppliersService:
                 segment_df = segment_df.sort_values("month")
                 segment_df["cumulative_total"] = segment_df["total_consumers"].cumsum()
                 segment_df["new_additions"] = segment_df["cumulative_total"].diff().fillna(segment_df["total_consumers"])
-                seg_filtered = segment_df[(segment_df["month"] >= start_dt) & (segment_df["month"] <= end_dt)]
-                for _, row in seg_filtered.iterrows():
+                # Return all segment values without date filtering
+                for _, row in segment_df.iterrows():
                     segment_records.append(
                         {
                             "month": row["month_label"],

@@ -169,22 +169,43 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
                 "non_renewables": 0.0,
                 "renewables": 0.0,
                 "other": 0.0,
+                "level2": {
+                    "Non-renewables": {"coal": 0.0, "natural_gas": 0.0, "diesel": 0.0},
+                    "Renewables": {"photoVoltaic": 0.0, "biogas": 0.0, "wind": 0.0, "solar_thermal": 0.0, "pv_storage": 0.0},
+                    "Other": {"other": 0.0, "pumped_storage": 0.0},
+                },
             },
         )
 
-        bucket["non_renewables"] += (
-            hv.get("coal", 0)
-            + hv.get("natural_Gas", 0)
-            + hv.get("mazut", 0)
-        )
-        bucket["renewables"] += (
-            hv.get("photoVoltaic", 0)
-            + hv.get("bio_Gas", 0)
-            + hv.get("wind", 0)
-            + hv.get("termo_Soler", 0)
-            + hv.get("photovoltaicIntegrated", 0)
-        )
-        bucket["other"] += hv.get("other", 0) + hv.get("pumpedStorage", 0)
+        # Top-level aggregates
+        coal_v = hv.get("coal", 0)
+        natural_gas_v = hv.get("natural_Gas", 0)
+        mazut_v = hv.get("mazut", 0)
+        photo_v = hv.get("photoVoltaic", 0)
+        bio_gas_v = hv.get("bio_Gas", 0)
+        wind_v = hv.get("wind", 0)
+        termo_v = hv.get("termo_Soler", 0)
+        pv_integrated_v = hv.get("photovoltaicIntegrated", 0)
+        other_v = hv.get("other", 0)
+        pumped_v = hv.get("pumpedStorage", 0)
+
+        bucket["non_renewables"] += coal_v + natural_gas_v + mazut_v
+        bucket["renewables"] += photo_v + bio_gas_v + wind_v + termo_v + pv_integrated_v
+        bucket["other"] += other_v + pumped_v
+
+        # Per-period Level-2 breakdown (keys match `_aggregate_level2` output)
+        bucket["level2"]["Non-renewables"]["coal"] += coal_v
+        bucket["level2"]["Non-renewables"]["natural_gas"] += natural_gas_v
+        bucket["level2"]["Non-renewables"]["diesel"] += mazut_v
+
+        bucket["level2"]["Renewables"]["photoVoltaic"] += photo_v
+        bucket["level2"]["Renewables"]["biogas"] += bio_gas_v
+        bucket["level2"]["Renewables"]["wind"] += wind_v
+        bucket["level2"]["Renewables"]["solar_thermal"] += termo_v
+        bucket["level2"]["Renewables"]["pv_storage"] += pv_integrated_v
+
+        bucket["level2"]["Other"]["other"] += other_v
+        bucket["level2"]["Other"]["pumped_storage"] += pumped_v
 
     series: List[Dict] = []
     for bucket in sorted(buckets.values(), key=lambda b: b["_sort_key"]):
@@ -192,6 +213,19 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
         non_renewables_share = round((bucket["non_renewables"] / total) * 100, 2) if total else 0
         renewables_share = round((bucket["renewables"] / total) * 100, 2) if total else 0
         other_share = round((bucket["other"] / total) * 100, 2) if total else 0
+        level2_flat = {
+            "coal_mw": round(bucket["level2"]["Non-renewables"]["coal"], 2),
+            "natural_gas_mw": round(bucket["level2"]["Non-renewables"]["natural_gas"], 2),
+            "diesel_mw": round(bucket["level2"]["Non-renewables"]["diesel"], 2),
+            "photoVoltaic_mw": round(bucket["level2"]["Renewables"]["photoVoltaic"], 2),
+            "biogas_mw": round(bucket["level2"]["Renewables"]["biogas"], 2),
+            "wind_mw": round(bucket["level2"]["Renewables"]["wind"], 2),
+            "solar_thermal_mw": round(bucket["level2"]["Renewables"]["solar_thermal"], 2),
+            "pv_storage_mw": round(bucket["level2"]["Renewables"]["pv_storage"], 2),
+            "other_source_mw": round(bucket["level2"]["Other"]["other"], 2),
+            "pumped_storage_mw": round(bucket["level2"]["Other"]["pumped_storage"], 2),
+        }
+        # Include per-period Level-2 breakdown alongside top-level aggregates
         series.append(
             {
                 "period": bucket["_sort_key"].strftime("%Y-%m-%dT%H:00")
@@ -208,6 +242,25 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
                 "renewables_share_percent": renewables_share,
                 "other_share_percent": other_share,
                 "renewable_share_percent": renewables_share,  # backward-friendly alias
+                **level2_flat,
+                "level2": {
+                    "Non-renewables": {
+                        "coal": round(bucket["level2"]["Non-renewables"]["coal"], 2),
+                        "natural_gas": round(bucket["level2"]["Non-renewables"]["natural_gas"], 2),
+                        "diesel": round(bucket["level2"]["Non-renewables"]["diesel"], 2),
+                    },
+                    "Renewables": {
+                        "photoVoltaic": round(bucket["level2"]["Renewables"]["photoVoltaic"], 2),
+                        "biogas": round(bucket["level2"]["Renewables"]["biogas"], 2),
+                        "wind": round(bucket["level2"]["Renewables"]["wind"], 2),
+                        "solar_thermal": round(bucket["level2"]["Renewables"]["solar_thermal"], 2),
+                        "pv_storage": round(bucket["level2"]["Renewables"]["pv_storage"], 2),
+                    },
+                    "Other": {
+                        "other": round(bucket["level2"]["Other"]["other"], 2),
+                        "pumped_storage": round(bucket["level2"]["Other"]["pumped_storage"], 2),
+                    },
+                },
             }
         )
 

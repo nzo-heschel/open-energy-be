@@ -118,8 +118,11 @@ async def save_uploaded_data_file(dataset: Union[str, DataFileSource], upload: U
             continue
 
     dest = DATA_FILES_DIR / dated_name
-    content = await upload.read()
-    dest.write_bytes(content)
+    # Stream the file to disk in chunks to avoid high memory usage.
+    chunk_size = 1024 * 1024  # 1MB
+    with open(dest, "wb") as buffer:
+        while chunk := await upload.read(chunk_size):
+            buffer.write(chunk)
     return dest
 
 
