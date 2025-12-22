@@ -150,8 +150,6 @@ class PrivateSuppliersService:
         )
         location_col = resolve_column(
             [
-                "\u05ea\u05d7\u05e8\u05d5\u05ea \u05d1\u05d0\u05e1\u05e4\u05e7\u05d4/ \u05d0\u05e1\u05d3\u05e8\u05d4 \u05e7\u05d9\u05d9\u05de\u05ea",
-                "\u05ea\u05d7\u05e8\u05d5\u05ea \u05d1\u05d0\u05e1\u05e4\u05e7\u05d4 / \u05d0\u05e1\u05d3\u05e8\u05d4 \u05e7\u05d9\u05d9\u05de\u05ea",
                 "\u05de\u05d7\u05d5\u05d6",
                 "\u05e9\u05dd \u05de\u05d7\u05d5\u05d6",
                 "\u05e9\u05dd \u05d9\u05d9\u05e9\u05d5\u05d1",
@@ -270,15 +268,18 @@ class PrivateSuppliersService:
             )
             segment_records: List[Dict] = []
             for segment_value, segment_df in grouped.groupby(col):
+                # Respect requested date filter for segment series
+                segment_df = segment_df[(segment_df["month"] >= start_dt) & (segment_df["month"] <= end_dt)]
+                if segment_df.empty:
+                    continue
                 segment_df = segment_df.sort_values("month")
                 segment_df["cumulative_total"] = segment_df["total_consumers"].cumsum()
                 segment_df["new_additions"] = segment_df["cumulative_total"].diff().fillna(segment_df["total_consumers"])
-                # Return all segment values without date filtering
                 for _, row in segment_df.iterrows():
                     segment_records.append(
                         {
                             "month": row["month_label"],
-                            key: PrivateSuppliersService._translate_value(segment_value),
+                            key: PrivateSuppliersService._translate_segment_value(key, segment_value),
                             "total_consumers": float(row["cumulative_total"]),
                             "new_additions": float(row["new_additions"]),
                         }
@@ -301,6 +302,25 @@ class PrivateSuppliersService:
             "מספקים עם אמצעי ייצור": "suppliers_with_generation",
         }
         return mapping.get(value, value)
+
+    @staticmethod
+    def _translate_meter(value: str) -> str:
+        text = str(value or "").strip()
+        lower = text.lower()
+        if "smart" in lower:
+            return "smart"
+        if "basic" in lower:
+            return "basic"
+        return PrivateSuppliersService._translate_value(text)
+
+    @staticmethod
+    def _translate_segment_value(key: str, value: str) -> str:
+        if key == "location":
+            return str(value or "")
+        if key == "meter_type":
+            return PrivateSuppliersService._translate_meter(value)
+        return PrivateSuppliersService._translate_value(value)
+
 
     @staticmethod
     def get_data(start_date: Optional[str], end_date: Optional[str], csv_path: Optional[Path] = None) -> Dict:

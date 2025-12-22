@@ -123,8 +123,10 @@ class SMPProductionService:
                 {
                     "with_sum": 0.0,
                     "without_sum": 0.0,
+                    "net_sum": 0.0,
                     "count_with": 0,
                     "count_without": 0,
+                    "count_net": 0,
                 },
             )
             if item.get("price_with_constraints") is not None:
@@ -133,17 +135,22 @@ class SMPProductionService:
             if item.get("price_without_constraints") is not None:
                 bucket["without_sum"] += item["price_without_constraints"]  # type: ignore
                 bucket["count_without"] += 1  # type: ignore
+            if item.get("net_demand") is not None:
+                bucket["net_sum"] += item["net_demand"]  # type: ignore
+                bucket["count_net"] += 1  # type: ignore
 
         aggregated: List[Dict] = []
         for key, values in buckets.items():
             avg_with = values["with_sum"] / values["count_with"] if values["count_with"] else None
             avg_without = values["without_sum"] / values["count_without"] if values["count_without"] else None
+            avg_net = values["net_sum"] / values["count_net"] if values["count_net"] else None
             aggregated.append(
                 {
                     "period": key,
                     "avg_smp": avg_with if avg_with is not None else avg_without,
                     "price_with_constraints": avg_with,
                     "price_without_constraints": avg_without,
+                    "net_demand": avg_net,
                 }
             )
         aggregated.sort(key=lambda x: x["period"])
@@ -281,14 +288,16 @@ class SMPProductionService:
             )
         daily_smp.sort(key=lambda x: x["date"])
 
-        # Aggregations for month/year views (driven by start/end only)
-        daily_view = SMPProductionService._aggregate(smp_series, period="day")
+        # Aggregations for month/year views (driven by start/end only). Use combined series so net_demand is included.
+        daily_view = SMPProductionService._aggregate(combined_series, period="day")
 
         running_monthly_averages = []
         monthly_sums_with: Dict[str, float] = {}
         monthly_counts_with: Dict[str, int] = {}
         monthly_sums_without: Dict[str, float] = {}
         monthly_counts_without: Dict[str, int] = {}
+        monthly_sums_net: Dict[str, float] = {}
+        monthly_counts_net: Dict[str, int] = {}
 
         for daily_item in daily_view:
             daily_period = daily_item["period"]
@@ -296,7 +305,8 @@ class SMPProductionService:
 
             with_val = daily_item.get("price_with_constraints")
             without_val = daily_item.get("price_without_constraints")
-            if with_val is None and without_val is None:
+            net_val = daily_item.get("net_demand")
+            if with_val is None and without_val is None and net_val is None:
                 continue
 
             if with_val is not None:
@@ -311,6 +321,12 @@ class SMPProductionService:
                 monthly_sums_without[month_key] = current_sum + without_val
                 monthly_counts_without[month_key] = current_count + 1
 
+            if net_val is not None:
+                current_sum = monthly_sums_net.get(month_key, 0.0)
+                current_count = monthly_counts_net.get(month_key, 0)
+                monthly_sums_net[month_key] = current_sum + net_val
+                monthly_counts_net[month_key] = current_count + 1
+
             avg_with = (
                 monthly_sums_with.get(month_key, 0.0) / monthly_counts_with.get(month_key, 0)
                 if monthly_counts_with.get(month_key)
@@ -321,12 +337,18 @@ class SMPProductionService:
                 if monthly_counts_without.get(month_key)
                 else None
             )
+            avg_net = (
+                monthly_sums_net.get(month_key, 0.0) / monthly_counts_net.get(month_key, 0)
+                if monthly_counts_net.get(month_key)
+                else None
+            )
             running_monthly_averages.append(
                 {
                     "period": daily_period,
                     "avg_smp": avg_with if avg_with is not None else avg_without,
                     "price_with_constraints": avg_with,
                     "price_without_constraints": avg_without,
+                    "net_demand": avg_net,
                 }
             )
         monthly_view = running_monthly_averages
@@ -347,6 +369,7 @@ class SMPProductionService:
             "net_demand_series": net_demand_series,
             "combined_series": combined_series,
             "correlation": correlation,
+            "daily_average": daily_view,
             "daily_smp": daily_smp,
             "monthly_average": monthly_view,
         }
