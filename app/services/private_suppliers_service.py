@@ -131,30 +131,34 @@ class PrivateSuppliersService:
 
         sector_col = resolve_column(
             [
-                "\u05d1\u05d9\u05ea\u05d9/ \u05dc\u05d0 \u05d1\u05d9\u05ea\u05d9",
-                "\u05d1\u05d9\u05ea\u05d9/\u05dc\u05d0 \u05d1\u05d9\u05ea\u05d9",
-                "\u05d1\u05d9\u05ea\u05d9 / \u05dc\u05d0 \u05d1\u05d9\u05ea\u05d9",
-                "\u05de\u05d2\u05d6\u05e8",
+                "ביתי/ לא ביתי",
+                "ביתי/לא ביתי",
+                "ביתי / לא ביתי",
+                "מגזר",
                 "sector",
             ],
             required=False,
         )
         meter_col = resolve_column(
             [
-                "\u05e1\u05d5\u05d2 \u05d0\u05e1\u05d3\u05e8\u05d4",
-                "\u05e1\u05d5\u05d2 \u05d4\u05de\u05d5\u05e0\u05d4",
-                "\u05e1\u05d5\u05d2 \u05de\u05d5\u05e0\u05d4",
+                "סוג אסדרה",
+                "סוג המונה",
+                "סוג מונה",
+                "סוג אסדרה ",
+                "סוג אסדרה׳",
                 "meter type",
             ],
             required=False,
         )
         location_col = resolve_column(
             [
-                "\u05de\u05d7\u05d5\u05d6",
-                "\u05e9\u05dd \u05de\u05d7\u05d5\u05d6",
-                "\u05e9\u05dd \u05d9\u05d9\u05e9\u05d5\u05d1",
-                "\u05d9\u05d9\u05e9\u05d5\u05d1",
-                "\u05d0\u05d6\u05d5\u05e8",
+                "תחנות באספקה/ אסדרה קיימת",
+                "תחנות באספקה / אסדרה קיימת",
+                "מחוז",
+                "שם מחוז",
+                "שם יישוב",
+                "יישוב",
+                "אזור",
                 "region",
                 "district",
                 "location",
@@ -268,7 +272,6 @@ class PrivateSuppliersService:
             )
             segment_records: List[Dict] = []
             for segment_value, segment_df in grouped.groupby(col):
-                # Respect requested date filter for segment series
                 segment_df = segment_df[(segment_df["month"] >= start_dt) & (segment_df["month"] <= end_dt)]
                 if segment_df.empty:
                     continue
@@ -288,14 +291,11 @@ class PrivateSuppliersService:
         return segments
 
     @staticmethod
+    @staticmethod
     def _translate_value(value: str) -> str:
-        """
-        Map common Hebrew values to English tokens for response consistency.
-        Unknown values are returned as-is.
-        """
         mapping = {
             "אסדרה קיימת": "existing_regulation",
-            "תחרות באספקה": "competitive_supply",
+            "תחנות באספקה": "competitive_supply",
             "ביתי": "residential",
             "לא ביתי": "non_residential",
             "מספקים וירטואליים": "virtual_suppliers",
@@ -316,7 +316,7 @@ class PrivateSuppliersService:
     @staticmethod
     def _translate_segment_value(key: str, value: str) -> str:
         if key == "location":
-            return str(value or "")
+            return PrivateSuppliersService._translate_value(value)
         if key == "meter_type":
             return PrivateSuppliersService._translate_meter(value)
         return PrivateSuppliersService._translate_value(value)

@@ -109,7 +109,7 @@ class SMPProductionService:
     @staticmethod
     def _aggregate(series: List[Dict], period: str) -> List[Dict]:
         """
-        Aggregate timestamped series by day or month.
+        Aggregate timestamped series by day, month, or year.
         """
         buckets: Dict[str, Dict[str, float | int]] = {}
         for item in series:
@@ -117,7 +117,12 @@ class SMPProductionService:
                 dt = datetime.fromisoformat(item["timestamp"])
             except Exception:
                 continue
-            key = dt.strftime("%Y-%m") if period == "month" else dt.date().isoformat()
+            if period == "month":
+                key = dt.strftime("%Y-%m")
+            elif period == "year":
+                key = dt.strftime("%Y")
+            else:
+                key = dt.date().isoformat()
             bucket = buckets.setdefault(
                 key,
                 {
@@ -288,71 +293,43 @@ class SMPProductionService:
             )
         daily_smp.sort(key=lambda x: x["date"])
 
-        # Aggregations for month/year views (driven by start/end only). Use combined series so net_demand is included.
+                # Aggregations for day/month/year views (driven by start/end only). Use combined series so net_demand is included.
         daily_view = SMPProductionService._aggregate(combined_series, period="day")
+        monthly_view = SMPProductionService._aggregate(combined_series, period="month")
+        yearly_view = SMPProductionService._aggregate(combined_series, period="year")
 
-        running_monthly_averages = []
-        monthly_sums_with: Dict[str, float] = {}
-        monthly_counts_with: Dict[str, int] = {}
-        monthly_sums_without: Dict[str, float] = {}
-        monthly_counts_without: Dict[str, int] = {}
-        monthly_sums_net: Dict[str, float] = {}
-        monthly_counts_net: Dict[str, int] = {}
-
-        for daily_item in daily_view:
-            daily_period = daily_item["period"]
-            month_key = daily_period[:7]
-
-            with_val = daily_item.get("price_with_constraints")
-            without_val = daily_item.get("price_without_constraints")
-            net_val = daily_item.get("net_demand")
-            if with_val is None and without_val is None and net_val is None:
-                continue
-
-            if with_val is not None:
-                current_sum = monthly_sums_with.get(month_key, 0.0)
-                current_count = monthly_counts_with.get(month_key, 0)
-                monthly_sums_with[month_key] = current_sum + with_val
-                monthly_counts_with[month_key] = current_count + 1
-
-            if without_val is not None:
-                current_sum = monthly_sums_without.get(month_key, 0.0)
-                current_count = monthly_counts_without.get(month_key, 0)
-                monthly_sums_without[month_key] = current_sum + without_val
-                monthly_counts_without[month_key] = current_count + 1
-
-            if net_val is not None:
-                current_sum = monthly_sums_net.get(month_key, 0.0)
-                current_count = monthly_counts_net.get(month_key, 0)
-                monthly_sums_net[month_key] = current_sum + net_val
-                monthly_counts_net[month_key] = current_count + 1
-
-            avg_with = (
-                monthly_sums_with.get(month_key, 0.0) / monthly_counts_with.get(month_key, 0)
-                if monthly_counts_with.get(month_key)
-                else None
-            )
-            avg_without = (
-                monthly_sums_without.get(month_key, 0.0) / monthly_counts_without.get(month_key, 0)
-                if monthly_counts_without.get(month_key)
-                else None
-            )
-            avg_net = (
-                monthly_sums_net.get(month_key, 0.0) / monthly_counts_net.get(month_key, 0)
-                if monthly_counts_net.get(month_key)
-                else None
-            )
-            running_monthly_averages.append(
+        correlation_by_view = {
+            "day": [
                 {
-                    "period": daily_period,
-                    "avg_smp": avg_with if avg_with is not None else avg_without,
-                    "price_with_constraints": avg_with,
-                    "price_without_constraints": avg_without,
-                    "net_demand": avg_net,
+                    "timestamp": item["timestamp"],
+                    "price_with_constraints": item.get("price_with_constraints"),
+                    "price_without_constraints": item.get("price_without_constraints"),
+                    "net_demand": item.get("net_demand"),
                 }
-            )
-        monthly_view = running_monthly_averages
-
+                for item in combined_series
+                if item.get("price_with_constraints") is not None
+                or item.get("price_without_constraints") is not None
+                or item.get("net_demand") is not None
+            ],
+            "month": [
+                {
+                    "period": item["period"],
+                    "price_with_constraints": item.get("price_with_constraints"),
+                    "price_without_constraints": item.get("price_without_constraints"),
+                    "net_demand": item.get("net_demand"),
+                }
+                for item in monthly_view
+            ],
+            "year": [
+                {
+                    "period": item["period"],
+                    "price_with_constraints": item.get("price_with_constraints"),
+                    "price_without_constraints": item.get("price_without_constraints"),
+                    "net_demand": item.get("net_demand"),
+                }
+                for item in yearly_view
+            ],
+        }
         days_delta = (end_dt - start_dt).days
         if days_delta <= 1:
             default_view = "day"
@@ -368,8 +345,10 @@ class SMPProductionService:
             "smp_series": smp_series,
             "net_demand_series": net_demand_series,
             "combined_series": combined_series,
-            "correlation": correlation,
+            "correlation": correlation_by_view.get("day", []),
+            "correlation_by_view": correlation_by_view,
             "daily_average": daily_view,
             "daily_smp": daily_smp,
             "monthly_average": monthly_view,
+            "yearly_average": yearly_view,
         }
