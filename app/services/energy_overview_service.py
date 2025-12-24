@@ -41,21 +41,21 @@ class EnergyOverviewService:
     @staticmethod
     def aggregate(hourly: List[Dict]) -> Dict:
         """
-        Builds new category format (fossil_energy, renewable_energy, other)
+        Builds new category format (non_renewables, renewables, other)
         """
         level1 = {
-            "fossil_energy": 0,
-            "renewable_energy": 0,
+            "non_renewables": 0,
+            "renewables": 0,
             "other": 0
         }
 
         level2 = {
-            "fossil_energy": {
+            "non_renewables": {
                 "coal": 0,
                 "natural_gas": 0,
                 "diesel": 0
             },
-            "renewable_energy": {
+            "renewables": {
                 "photovoltaic": 0,
                 "biogas": 0,
                 "wind": 0,
@@ -72,25 +72,25 @@ class EnergyOverviewService:
 
         for h in hourly:
             # Fossil
-            level2["fossil_energy"]["coal"] += sum_keys(h, ["coal"])
-            level2["fossil_energy"]["natural_gas"] += sum_keys(h, ["natural_Gas", "natural_gas"])
-            level2["fossil_energy"]["diesel"] += sum_keys(h, ["mazut", "diesel"])
+            level2["non_renewables"]["coal"] += sum_keys(h, ["coal"])
+            level2["non_renewables"]["natural_gas"] += sum_keys(h, ["natural_Gas", "natural_gas"])
+            level2["non_renewables"]["diesel"] += sum_keys(h, ["mazut", "diesel"])
 
             # Renewable
-            level2["renewable_energy"]["photovoltaic"] += sum_keys(
+            level2["renewables"]["photovoltaic"] += sum_keys(
                 h, ["photoVoltaic", "photovoltaic", "photovoltaicIntegrated"]
             )
-            level2["renewable_energy"]["biogas"] += sum_keys(h, ["bio_Gas", "biogas"])
-            level2["renewable_energy"]["wind"] += sum_keys(h, ["wind"])
-            level2["renewable_energy"]["solar"] += sum_keys(h, ["termo_Soler", "solar"])
+            level2["renewables"]["biogas"] += sum_keys(h, ["bio_Gas", "biogas"])
+            level2["renewables"]["wind"] += sum_keys(h, ["wind"])
+            level2["renewables"]["solar"] += sum_keys(h, ["termo_Soler", "solar"])
 
             # Other
             level2["other"]["other"] += sum_keys(h, ["other"])
             level2["other"]["pumped_storage"] += sum_keys(h, ["pumpedStorage", "pumped_storage"])
 
         # Level-1 sums
-        level1["fossil_energy"] = sum(level2["fossil_energy"].values())
-        level1["renewable_energy"] = sum(level2["renewable_energy"].values())
+        level1["non_renewables"] = sum(level2["non_renewables"].values())
+        level1["renewables"] = sum(level2["renewables"].values())
         level1["other"] = sum(level2["other"].values())
 
         total = sum(level1.values())
@@ -100,7 +100,7 @@ class EnergyOverviewService:
             for k, v in level1.items()
         }
 
-        renewable_generation = level1["renewable_energy"]
+        renewable_generation = level1["renewables"]
         renewable_share_percent = round((renewable_generation / total) * 100, 2) if total else 0
 
         categories = format_categories(flatten_level2(level2))
@@ -160,7 +160,7 @@ class EnergyOverviewService:
         # Tooltip from Delivery-1 specification
         result["tooltip"] = (
             "The chart shows Israel's electricity generation mix and illustrates the "
-            "different energy sources: fossil (coal, natural gas, diesel) and "
+            "different energy sources: non-renewables (coal, natural gas, diesel) and "
             "renewables (PV, biogas, wind, solar). Data updated hourly from NOGA."
         )
 
@@ -203,4 +203,4 @@ class EnergyOverviewService:
             df_level2.to_excel(writer, sheet_name="Detailed", index=False)
 
         buffer.seek(0)
-        return buffer.getvalue()
+        return buffer.getvalue()    
