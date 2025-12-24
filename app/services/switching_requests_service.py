@@ -12,43 +12,79 @@ import pandas as pd
 from app.utils.enums import DataFileSource
 from app.services.data_file_manager import ensure_fresh_data_file
 
-LOCAL_CACHE = Path(os.getenv("SWITCHING_REQUESTS_CACHE", "switching_requests.csv"))
-
-STATUS_COLUMN_PATTERNS = [
+DEFAULT_CSV_PATH = Path(os.getenv("SWITCHING_REQUESTS_CSV_PATH", "Files_Netunei_hashmal_mp_niyud.xlsx"))
+HEADER_MARKERS = {
+    "year / month",
+    "type of regulation",
+    "supply competition / existing regulation",
+    "domestic / non-domestic",
+    "reasons for the status",
+    "status reason details",
     "status",
-    "request status",
-    "\u05e1\u05d8\u05d8\u05d5\u05e1",
-    "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05d1\u05e7\u05e9\u05d4",
-    "\u05e1\u05d8\u05d8\u05d5\u05e1 \u05d1\u05e7\u05e9\u05d5\u05ea",
-]
-REJECTION_COLUMN_PATTERNS = [
-    "rejection reason",
-    "reject reason",
-    "rejection",
-    "reject",
-    "decline",
-    "denied",
-    "\u05e1\u05d9\u05d1\u05ea \u05d3\u05d7\u05d9\u05d4",
-    "\u05e1\u05d9\u05d1\u05ea \u05d3\u05d7\u05d9\u05d9\u05d4",
-    "\u05e1\u05d9\u05d1\u05d4 \u05dc\u05d3\u05d7\u05d9\u05d4",
-    "\u05e1\u05d9\u05d1\u05d4 \u05dc\u05d3\u05d7\u05d9\u05d9\u05d4",
-    "\u05e1\u05d9\u05d1\u05ea \u05e1\u05d8\u05d8\u05d5\u05e1",
-    "\u05e1\u05d9\u05d1\u05d5\u05ea \u05dc\u05e1\u05d8\u05d8\u05d5\u05e1",
-    "\u05e4\u05d9\u05e8\u05d5\u05d8 \u05e1\u05d9\u05d1\u05ea \u05e1\u05d8\u05d8\u05d5\u05e1",
-]
-STATUS_EXCLUDE_PATTERNS = [
-    "reason",
-    "reject",
-    "rejection",
-    "\u05e1\u05d9\u05d1\u05d4",
-    "\u05d3\u05d7\u05d9\u05d4",
-]
+    "number of requests",
+    "ביתי/ לא ביתי",
+    "סיבות לסטטוס",
+    "פירוט סיבת סטטוס",
+    "סטטוס",
+    "מספר בקשות",
+    "סוג אסדרה",
+}
+
+
+def _normalize_col(value: str) -> str:
+    text = str(value or "").strip().lower()
+    text = text.replace("\ufeff", "").replace("\u00a0", " ")
+    return re.sub(r"[\s/._-]+", "", text)
+
+
+def _looks_like_header_row(row: pd.Series) -> bool:
+    values = [str(v).strip().lower() for v in row.tolist()]
+    hits = sum(1 for v in values if v in HEADER_MARKERS)
+    return hits >= max(3, len(values) // 2)
+
+
+def _resolve_column(df: pd.DataFrame, possible: list[str], required: bool = True) -> Optional[str]:
+    normalized_cols = {_normalize_col(col): col for col in df.columns}
+    for name in possible:
+        if name in df.columns:
+            return name
+    for name in possible:
+        normalized = _normalize_col(name)
+        if normalized in normalized_cols:
+            return normalized_cols[normalized]
+    for col in df.columns:
+        col_norm = _normalize_col(col)
+        for name in possible:
+            name_norm = _normalize_col(name)
+            if name_norm and name_norm in col_norm:
+                return col
+    if required:
+        raise KeyError(f"Missing expected columns matching: {possible}")
+    return None
+
+
+def _translate_value(value: str) -> str:
+    mapping = {
+        "ביתי": "residential",
+        "לא ביתי": "non_residential",
+        "אסדרה קיימת": "existing_regulation",
+        "תחרות באספקה": "competitive_supply",
+        "מספקים עם אמצעי ייצור": "suppliers_with_generation",
+        "מספקים וירטואליים": "virtual_suppliers",
+        "הושלם": "approved",
+        "נדחה": "rejected",
+    }
+    text = str(value or "").strip()
+    if text in mapping:
+        return mapping[text]
+    lowered = text.lower().strip()
+    lowered = lowered.replace(" ", "_").replace("-", "_").replace("/", "_")
+    if lowered in mapping:
+        return mapping[lowered]
+    return lowered or "unknown"
 
 
 def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
-    """
-    Load the switching-requests CSV (or Excel), normalizing headers.
-    """
     csv_path = csv_path or ensure_fresh_data_file(DataFileSource.SWITCHING_REQUESTS)
     df = None
     if csv_path.suffix.lower() in (".xls", ".xlsx"):
@@ -57,211 +93,190 @@ def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
         except Exception:
             df = None
     if df is None:
-        for enc in ("cp1255", "utf-8-sig", "latin1"):
+        for enc in ("utf-8-sig", "cp1255", "latin1"):
             try:
                 df = pd.read_csv(csv_path, encoding=enc)
                 break
             except Exception:
                 df = None
     if df is None:
-        raise ValueError("Unable to parse switching-requests CSV.")
+        raise ValueError("Unable to parse switching-requests data file.")
 
     df.columns = [c.replace("\ufeff", "").strip() for c in df.columns]
+    if not df.empty and _looks_like_header_row(df.iloc[0]):
+        df = df.iloc[1:]
     return df
 
 
-def _normalize_col_name(value: str) -> str:
-    text = str(value or "").strip().lower()
-    text = text.replace("\ufeff", "").replace("\u00a0", " ")
-    return re.sub(r"[\s/._-]+", "", text)
-
-
-def _find_column(
-    columns: List[str],
-    patterns: List[str],
-    exclude_patterns: Optional[List[str]] = None,
-) -> Optional[str]:
-    normalized = [(_normalize_col_name(col), col) for col in columns]
-    excludes = [_normalize_col_name(pat) for pat in (exclude_patterns or []) if pat]
-
-    def is_excluded(normalized_name: str) -> bool:
-        return any(ex and ex in normalized_name for ex in excludes)
-
-    for pattern in patterns:
-        pattern_norm = _normalize_col_name(pattern)
-        for normalized_name, col in normalized:
-            if normalized_name == pattern_norm and not is_excluded(normalized_name):
-                return col
-
-    for pattern in patterns:
-        pattern_norm = _normalize_col_name(pattern)
-        if not pattern_norm:
-            continue
-        for normalized_name, col in normalized:
-            if pattern_norm in normalized_name and not is_excluded(normalized_name):
-                return col
-    return None
-
-
-def _normalize_customer_type(value: str) -> str:
-    text = str(value or "").lower()
-    if "ביתי" in text and "לא" not in text:
-        return "residential"
-    if "non" in text:
-        return "non_residential"
-    if "לא" in text:
-        return "non_residential"
-    return "residential"
-
-
-def _attach_customer_type(df: pd.DataFrame) -> pd.DataFrame:
-    customer_col = next((c for c in df.columns if "ביתי" in c), None)
-    if not customer_col:
-        df["customer_type"] = "unknown"
-    else:
-        df["customer_type"] = df[customer_col].apply(_normalize_customer_type)
-    return df
-
-
-def _filter_customer_type(df: pd.DataFrame, customer_type: Optional[str]) -> pd.DataFrame:
-    if not customer_type:
-        return df
-    norm = customer_type.lower()
-    allowed = {"residential", "non_residential"}
-    if norm not in allowed:
-        raise ValueError(f"customer_type must be one of {sorted(allowed)}")
-    return df[df["customer_type"] == norm]
-
-
-def _group_counts(df: pd.DataFrame, key: str, translate: bool = False) -> List[Dict]:
+def _group_sum(df: pd.DataFrame, key: str, value_col: str) -> List[Dict]:
     if key not in df.columns:
         return []
-    grouped = df.groupby(key).size().reset_index(name="count").sort_values("count", ascending=False)
+    grouped = (
+        df.groupby(key)[value_col]
+        .sum()
+        .reset_index()
+        .sort_values(value_col, ascending=False)
+    )
     results = []
     for _, row in grouped.iterrows():
-        label = str(row[key])
-        if translate:
-            label = _translate_value(label)
-        results.append({"label": label, "count": int(row["count"])})
+        results.append({"label": _translate_value(row[key]), "count": int(row[value_col])})
     return results
 
 
-def _bucket_connection_size(df: pd.DataFrame) -> List[Dict]:
-    size_col = next((c for c in df.columns if "gva" in c.lower()), None)
-    if not size_col or df[size_col].dropna().empty:
-        return []
-    bins = [0, 0.05, 0.1, 0.5, 1, 5, float("inf")]
-    labels = ["0-0.05", "0.05-0.1", "0.1-0.5", "0.5-1", "1-5", "5+"]
-    bucketed = pd.cut(df[size_col], bins=bins, labels=labels, include_lowest=True)
-    grouped = bucketed.value_counts().sort_index()
-    return [{"label": str(idx), "count": int(val)} for idx, val in grouped.items()]
-
-
-def _translate_value(value: str) -> str:
-    translations = {
-        "המרכז": "central",
-        "תל אביב": "tel_aviv",
-        "הדרום": "south",
-        "חיפה": "haifa",
-        "ירושלים": "jerusalem",
-        "הצפון": "north",
-        "אזור יהודה ושומרון": "judea_samaria",
-        "אחר": "other",
-        "נמוך": "low",
-        "גבוה": "high",
-        "בינוני": "medium",
-        "חכם": "smart",
-        "בסיסי": "basic",
-        "אסדרה קיימת": "existing_regulation",
-        "תחרות באספקה": "competitive_supply",
-        "עליון": "extra_high",
-    }
-    text = str(value or "").strip()
-    if text in translations:
-        return translations[text]
-    # If still Hebrew / non-ASCII, collapse to "other".
-    if any(ord(ch) > 127 for ch in text):
-        return "other"
-    return text or "unknown"
-
-
-def build_payload(customer_type: Optional[str] = None, csv_path: Optional[Path] = None) -> Dict:
+def build_payload(
+    customer_type: Optional[str] = None,
+    year: Optional[int] = None,
+    csv_path: Optional[Path] = None,
+) -> Dict:
     df = _load_dataframe(csv_path)
-    df = _attach_customer_type(df)
-    df = _filter_customer_type(df, customer_type)
 
-    # Column detection for status/rejection if present.
-    status_col = _find_column(
-        df.columns,
-        STATUS_COLUMN_PATTERNS,
-        exclude_patterns=STATUS_EXCLUDE_PATTERNS,
+    year_month_col = _resolve_column(
+        df,
+        ["year / month", "year/month", "year-month", "year_month", "שנה/ חודש"],
+        required=True,
     )
-    rejection_col = _find_column(df.columns, REJECTION_COLUMN_PATTERNS)
-    region_col = next((c for c in df.columns if "????" in c), None)
-    voltage_col = next((c for c in df.columns if "???" in c), None)
-    meter_col = next((c for c in df.columns if "????" in c), None)
-    regulation_col = next((c for c in df.columns if "?????" in c), None)
+    requests_col = _resolve_column(
+        df,
+        ["number of requests", "מספר בקשות", "total requests", "count"],
+        required=True,
+    )
+    regulation_col = _resolve_column(df, ["type of regulation", "סוג אסדרה"], required=False)
+    competition_col = _resolve_column(
+        df,
+        ["supply competition / existing regulation", "תחרות באספקה/ אסדרה קיימת"],
+        required=False,
+    )
+    customer_col = _resolve_column(
+        df,
+        [
+            "domestic / non-domestic",
+            "residential / non-residential",
+            "residential/non-residential",
+            "ביתי/ לא ביתי",
+        ],
+        required=False,
+    )
+    status_col = _resolve_column(df, ["status", "סטטוס"], required=False)
+
+    status_reason_col = _resolve_column(
+        df,
+        ["reasons for the status", "סיבות לסטטטוס", "סיבות לסטטוס", "סיבות לסטטטוס"],
+        required=False,
+    )
+    status_reason_details_col = _resolve_column(
+        df,
+        ["status reason details", "פירוט סיבת סטטוס"],
+        required=False,
+    )
+
+    rename_map = {
+        year_month_col: "year_month",
+        requests_col: "requests_count",
+    }
+    if regulation_col:
+        rename_map[regulation_col] = "regulation_type"
+    if competition_col:
+        rename_map[competition_col] = "competition_type"
+    if customer_col:
+        rename_map[customer_col] = "customer_type"
+    if status_col:
+        rename_map[status_col] = "status"
+    if status_reason_col:
+        rename_map[status_reason_col] = "status_reason"
+    if status_reason_details_col:
+        rename_map[status_reason_details_col] = "status_reason_details"
+    df = df.rename(columns=rename_map)
+
+    df["year_month"] = pd.to_datetime(df["year_month"], errors="coerce")
+    df = df.dropna(subset=["year_month"])
+    df["requests_count"] = pd.to_numeric(df["requests_count"], errors="coerce").fillna(0)
+    df["year"] = df["year_month"].dt.year
+    df["month_label"] = df["year_month"].dt.to_period("M").dt.strftime("%Y-%m")
+
+    if "customer_type" in df.columns:
+        df["customer_type"] = df["customer_type"].apply(_translate_value)
+    if "regulation_type" in df.columns:
+        df["regulation_type"] = df["regulation_type"].apply(_translate_value)
+    if "competition_type" in df.columns:
+        df["competition_type"] = df["competition_type"].apply(_translate_value)
+    if "status" in df.columns:
+        df["status"] = df["status"].apply(_translate_value)
+    if "status_reason" in df.columns:
+        df["status_reason"] = df["status_reason"].apply(_translate_value)
+    if "status_reason_details" in df.columns:
+        df["status_reason_details"] = df["status_reason_details"].apply(_translate_value)
+
+    available_years = sorted(df["year"].dropna().unique().tolist())
+    if year:
+        if year < 2021:
+            raise ValueError("year must be 2021 or later")
+        df = df[df["year"] == year]
+
+    if customer_type:
+        normalized_customer_type = _translate_value(customer_type)
+        allowed = {"residential", "non_residential", "unknown"}
+        if normalized_customer_type not in allowed:
+            raise ValueError(f"customer_type must be one of {sorted(allowed)}")
+        if "customer_type" in df.columns:
+            df = df[df["customer_type"] == normalized_customer_type]
+        elif normalized_customer_type != "unknown":
+            df = df.iloc[0:0]
+
+    total_requests = int(df["requests_count"].sum())
+
+    monthly_totals = (
+        df.groupby("month_label")["requests_count"]
+        .sum()
+        .reset_index()
+        .sort_values("month_label")
+        .rename(columns={"month_label": "month", "requests_count": "requests"})
+        .to_dict(orient="records")
+    )
 
     charts = {
-        "by_customer_type": {
-            "label": "Requests by customer type",
-            "data": _group_counts(df, "customer_type"),
-        },
-        "by_region": {
-            "label": "Requests by region",
-            "data": _group_counts(df, region_col, translate=True) if region_col else [],
-        },
-        "by_voltage": {
-            "label": "Requests by voltage level",
-            "data": _group_counts(df, voltage_col, translate=True) if voltage_col else [],
-        },
-        "by_meter_type": {
-            "label": "Requests by meter type",
-            "data": _group_counts(df, meter_col, translate=True) if meter_col else [],
-        },
-        "by_regulation": {
-            "label": "Requests by regulation",
-            "data": _group_counts(df, regulation_col, translate=True) if regulation_col else [],
-        },
-        "by_connection_size": {
-            "label": "Requests by connection size (GVA)",
-            "data": _bucket_connection_size(df),
-        },
         "requests_by_status": {
-            "label": "Requests by status",
-            "data": _group_counts(df, status_col) if status_col else [],
+            "label": "Number of requests by status",
+            "data": _group_sum(df, "status", "requests_count") if "status" in df.columns else [],
         },
-        "requests_by_rejection_reason": {
-            "label": "Requests by rejection reason",
-            "data": _group_counts(df, rejection_col) if rejection_col else [],
+        "requests_by_customer_type": {
+            "label": "Number of requests by customer type",
+            "data": _group_sum(df, "customer_type", "requests_count") if "customer_type" in df.columns else [],
         },
-        "total_requests": {
-            "label": "Total requests",
-            "data": [{"count": int(len(df))}],
+        "requests_by_regulation_type": {
+            "label": "Number of requests by regulation type",
+            "data": _group_sum(df, "regulation_type", "requests_count") if "regulation_type" in df.columns else [],
+        },
+        "requests_by_competition_type": {
+            "label": "Number of requests by supply competition/existing regulation",
+            "data": _group_sum(df, "competition_type", "requests_count") if "competition_type" in df.columns else [],
         },
     }
 
     return {
-        "filter": customer_type or "all",
+        "filter": {
+            "customer_type": customer_type or "all",
+            "year": year or "all",
+        },
         "unit": "count",
+        "available_years": available_years,
+        "start_year": min(available_years) if available_years else None,
         "charts": charts,
+        "monthly_requests": monthly_totals,
+        "total_requests": total_requests,
     }
 
 
 def to_excel(payload: Dict) -> bytes:
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        summary_rows = [{"metric": "filter", "value": payload.get("filter")}]
-        summary_rows.append(
-            {
-                "metric": "total_requests",
-                "value": payload.get("charts", {})
-                .get("total_requests", {})
-                .get("data", [{}])[0]
-                .get("count"),
-            }
-        )
+        summary_rows = [
+            {"metric": "customer_type", "value": payload.get("filter", {}).get("customer_type")},
+            {"metric": "year", "value": payload.get("filter", {}).get("year")},
+            {"metric": "total_requests", "value": payload.get("total_requests")},
+        ]
         pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Summary", index=False)
+
+        pd.DataFrame(payload.get("monthly_requests", [])).to_excel(writer, sheet_name="Monthly", index=False)
 
         for key, chart in payload.get("charts", {}).items():
             data = chart.get("data") or []

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from typing import Dict
 from app.services.smp_service import SMPService
 from app.services.smp_processor import SMPProcessor
+from fastapi.responses import StreamingResponse
 from app.services.demand_service import DemandService
 from app.utils.date_utils import resolve_date_range, to_noga_date
 from dotenv import load_dotenv
@@ -63,3 +64,18 @@ async def get_smp_data(start_date: str = None, end_date: str = None) -> Dict:
         raise
     except Exception as e:
         raise HTTPException(status_code=424, detail=f"Failed to fetch SMP data: {str(e)}")
+
+
+@router.get("/export")
+async def export_smp_data(start_date: str = None, end_date: str = None):
+    """
+    Export SMP response to Excel.
+    """
+    payload = await get_smp_data(start_date, end_date)
+    contents = SMPProcessor.to_excel(payload)
+    filename = f"smp_{payload['start_date']}_to_{payload['end_date']}.xlsx"
+    return StreamingResponse(
+        iter([contents]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

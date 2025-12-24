@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Union
@@ -17,8 +18,10 @@ DATA_FILES_DIR = Path(
 MAX_AGE_DAYS = float(os.getenv("DATA_FILES_MAX_AGE_DAYS", "7"))
 
 DATASET_BASE_NAMES = {
-    DataFileSource.PRIVATE_SUPPLIERS.value: "Files_Netunei_hashmal_mp_niyud",
-    DataFileSource.SWITCHING_REQUESTS.value: "Files_Netunei_hashmal_mp_tzarchan",
+    # Private suppliers now uses the _tzarchan source file.
+    DataFileSource.PRIVATE_SUPPLIERS.value: "Files_Netunei_hashmal_mp_tzarchan",
+    # Switching requests now uses the _niyud source file.
+    DataFileSource.SWITCHING_REQUESTS.value: "Files_Netunei_hashmal_mp_niyud",
 }
 
 
@@ -50,6 +53,20 @@ def _latest_file(dataset: Union[str, DataFileSource]) -> Optional[Path]:
     return candidates[0]
 
 
+def _age_days(path: Path) -> float:
+    """
+    Prefer the dd-mm-YYYY suffix in the filename for age; fall back to mtime.
+    """
+    match = re.search(r"_(\d{2}-\d{2}-\d{4})", path.stem)
+    if match:
+        try:
+            date_part = datetime.strptime(match.group(1), "%d-%m-%Y")
+            return (datetime.now() - date_part).total_seconds() / 86400
+        except ValueError:
+            pass
+    return (datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)).total_seconds() / 86400
+
+
 def ensure_fresh_data_file(dataset: Union[str, DataFileSource]) -> Path:
     """
     Return path to the freshest file for the dataset.
@@ -66,8 +83,8 @@ def ensure_fresh_data_file(dataset: Union[str, DataFileSource]) -> Path:
             ),
         )
 
-    age = datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)
-    if age > timedelta(days=MAX_AGE_DAYS):
+    age_days = _age_days(path)
+    if age_days > MAX_AGE_DAYS:
         raise HTTPException(
             status_code=428,
             detail=(
@@ -130,7 +147,7 @@ def data_file_status(dataset: Union[str, DataFileSource]) -> dict:
     path = _latest_file(dataset)
     if not path:
         return {"dataset": _normalize_dataset(dataset), "status": "missing"}
-    age_days = (datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)).total_seconds() / 86400
+    age_days = _age_days(path)
     return {
         "dataset": _normalize_dataset(dataset),
         "status": "fresh" if age_days <= MAX_AGE_DAYS else "stale",

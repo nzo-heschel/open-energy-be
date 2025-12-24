@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import pandas as pd
+from io import BytesIO
+
 from fastapi import HTTPException
 
 from app.services.smp_service import SMPService
@@ -352,3 +355,35 @@ class SMPProductionService:
             "monthly_average": monthly_view,
             "yearly_average": yearly_view,
         }
+
+    @staticmethod
+    def to_excel(payload: Dict) -> bytes:
+        """
+        Export SMP production vs marginal price payload to Excel.
+        """
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            summary_rows = [
+                {"metric": "start_date", "value": payload.get("start_date")},
+                {"metric": "end_date", "value": payload.get("end_date")},
+                {"metric": "view", "value": payload.get("view")},
+            ]
+            pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Summary", index=False)
+
+            for sheet_name, key in [
+                ("smp_series", "smp_series"),
+                ("net_demand_series", "net_demand_series"),
+                ("combined_series", "combined_series"),
+                ("correlation_day", "correlation"),
+                ("correlation_month", payload.get("correlation_by_view", {}).get("month")),
+                ("correlation_year", payload.get("correlation_by_view", {}).get("year")),
+                ("daily_average", "daily_average"),
+                ("monthly_average", "monthly_average"),
+                ("yearly_average", "yearly_average"),
+            ]:
+                data = payload.get(key) if isinstance(key, str) else key
+                if data:
+                    pd.DataFrame(data).to_excel(writer, sheet_name=sheet_name, index=False)
+
+        buffer.seek(0)
+        return buffer.getvalue()

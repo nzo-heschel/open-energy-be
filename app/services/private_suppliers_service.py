@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -13,7 +14,35 @@ from app.utils.date_utils import parse_date, to_iso_date
 from app.utils.enums import DataFileSource
 from app.services.data_file_manager import ensure_fresh_data_file
 
-DEFAULT_CSV_PATH = Path(os.getenv("PRIVATE_SUPPLIERS_CSV_PATH", "Files_Netunei_hashmal_mp_niyud.csv"))
+DEFAULT_CSV_PATH = Path(os.getenv("PRIVATE_SUPPLIERS_CSV_PATH", "Files_Netunei_hashmal_mp_tzarchan.csv"))
+HEADER_MARKERS = {
+    "year / month",
+    "type of regulation",
+    "supply competition / existing regulation",
+    "domestic / non-domestic",
+    "reasons for the status",
+    "status reason details",
+    "status",
+    "number of requests",
+    "locality name",
+    "district",
+    "district name",
+    "regulation",
+    "meter type",
+    "(gva) connection size",
+    "אסדרה",
+    "מתח",
+    "סוג המונה",
+    "ביתי/ לא ביתי",
+    "שנה/ חודש",
+    "סוג אסדרה",
+    "תחרות באספקה/ אסדרה קיימת",
+    "סיבות לסטטוס",
+    "פירוט סיבת סטטוס",
+    "סטטוס",
+    "מספר בקשות",
+    "רגולציה",
+}
 
 
 @dataclass
@@ -25,7 +54,51 @@ class PrivateSupplierRecord:
 
 class PrivateSuppliersService:
     @staticmethod
-    def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
+    def _derive_month_from_path(csv_path: Path) -> pd.Timestamp:
+        """
+        If the file name contains a dd-mm-YYYY suffix, use it; otherwise fall back to mtime.
+        """
+        match = re.search(r"_(\d{2}-\d{2}-\d{4})", csv_path.name)
+        if match:
+            dt = datetime.strptime(match.group(1), "%d-%m-%Y")
+        else:
+            dt = datetime.fromtimestamp(csv_path.stat().st_mtime)
+        return pd.Timestamp(dt.strftime("%Y-%m-01"))
+
+    @staticmethod
+    def _normalize_col(value: str) -> str:
+        text = str(value or "").strip().lower()
+        text = text.replace("\ufeff", "").replace("\u00a0", " ")
+        return re.sub(r"[\s/._-]+", "", text)
+
+    @staticmethod
+    def _looks_like_header_row(row: pd.Series) -> bool:
+        values = [str(v).strip().lower() for v in row.tolist()]
+        hits = sum(1 for v in values if v in HEADER_MARKERS)
+        return hits >= max(3, len(values) // 2)
+
+    @staticmethod
+    def _resolve_column(df: pd.DataFrame, possible: list[str], required: bool = True) -> Optional[str]:
+        normalized_cols = {PrivateSuppliersService._normalize_col(col): col for col in df.columns}
+        for name in possible:
+            if name in df.columns:
+                return name
+        for name in possible:
+            normalized = PrivateSuppliersService._normalize_col(name)
+            if normalized in normalized_cols:
+                return normalized_cols[normalized]
+        for col in df.columns:
+            col_norm = PrivateSuppliersService._normalize_col(col)
+            for name in possible:
+                name_norm = PrivateSuppliersService._normalize_col(name)
+                if name_norm and name_norm in col_norm:
+                    return col
+        if required:
+            raise KeyError(f"Missing expected column(s): {possible}")
+        return None
+
+    @staticmethod
+    def _load_dataframe(csv_path: Optional[Path] = None) -> Tuple[pd.DataFrame, bool]:
         csv_path = csv_path or ensure_fresh_data_file(DataFileSource.PRIVATE_SUPPLIERS)
 
         df: Optional[pd.DataFrame] = None
@@ -36,7 +109,7 @@ class PrivateSuppliersService:
             except Exception as exc:
                 last_err = exc
         else:
-            for enc in ("cp1255", "windows-1255", "latin1"):
+            for enc in ("cp1255", "utf-8-sig", "latin1"):
                 try:
                     df = pd.read_csv(csv_path, encoding=enc)
                     break
@@ -45,159 +118,140 @@ class PrivateSuppliersService:
         if df is None:
             raise last_err or ValueError("Unable to load CSV")
 
-        # Normalize header text to avoid BOM/whitespace mismatches.
         df.columns = [col.replace("\ufeff", "").strip() for col in df.columns]
 
-        # Resolve column names even if slightly different in the source.
-        def normalize_col(value: str) -> str:
-            text = str(value or "").strip().lower()
-            text = text.replace("\ufeff", "").replace("\u00a0", " ")
-            return re.sub(r"[\s/._-]+", "", text)
-
-        normalized_cols = {normalize_col(col): col for col in df.columns}
-
-        def resolve_column(possible: list[str], required: bool = True) -> Optional[str]:
-            for name in possible:
-                if name in df.columns:
-                    return name
-            for name in possible:
-                normalized = normalize_col(name)
-                if normalized in normalized_cols:
-                    return normalized_cols[normalized]
-            for col in df.columns:
-                col_norm = normalize_col(col)
-                for name in possible:
-                    name_norm = normalize_col(name)
-                    if name_norm and name_norm in col_norm:
-                        return col
-            if not required:
-                return None
-            return None
+        if not df.empty and PrivateSuppliersService._looks_like_header_row(df.iloc[0]):
+            df = df.iloc[1:]
 
         year_month_candidates = [
-            "\u05e9\u05e0\u05d4/ \u05d7\u05d5\u05d3\u05e9",
-            "\u05e9\u05e0\u05d4/\u05d7\u05d5\u05d3\u05e9",
-            "\u05e9\u05e0\u05d4 / \u05d7\u05d5\u05d3\u05e9",
-            "\u05e9\u05e0\u05d4/\u00a0\u05d7\u05d5\u05d3\u05e9",
+            "year / month",
             "year/month",
+            "year-month",
             "year_month",
             "year month",
             "month",
+            "date",
+            "שנה/ חודש",
+            "שנה/חודש",
         ]
-        year_month_col = resolve_column(year_month_candidates)
-        if year_month_col is None:
-            best_col = None
-            best_count = 0
-            for col in df.columns:
-                parsed = pd.to_datetime(df[col], errors="coerce", format="%Y/%m")
-                if parsed.notna().sum() == 0:
-                    parsed = pd.to_datetime(df[col], errors="coerce", format="%Y-%m")
-                count = parsed.notna().sum()
-                if count > best_count:
-                    best_col = col
-                    best_count = count
-            if best_col:
-                year_month_col = best_col
-            else:
-                raise KeyError("Missing expected date column (year/month).")
+        total_candidates = [
+            "total consumers",
+            "total requests",
+            "total",
+            "number of requests",
+            "count",
+            "מספר בקשות",
+            'סה"כ בקשות',
+            'סה"כ צרכנים',
+        ]
+        sector_candidates = [
+            "sector",
+            "residential / non-residential",
+            "residential/non-residential",
+            "domestic / non-domestic",
+            "domestic/non-domestic",
+            "residential",
+            "ביתי/ לא ביתי",
+        ]
+        meter_candidates = [
+            "meter type",
+            "type of meter",
+            "smart/basic",
+            "סוג המונה",
+        ]
+        regulation_candidates = [
+            "regulation",
+            "type of regulation",
+            "supply competition / existing regulation",
+            "סוג אסדרה",
+            "תחרות באספקה/ אסדרה קיימת",
+            "אסדרה",
+        ]
+        status_candidates = [
+            "status",
+            "request status",
+            "approval status",
+            "סטטוס",
+        ]
+        rejection_candidates = [
+            "status reason details",
+            "reasons for the status",
+            "rejection reason",
+            "reason",
+            "סיבות לסטטוס",
+            "פירוט סיבת סטטוס",
+        ]
 
-        total_col = resolve_column(
-            [
-                "\u05de\u05e1\u05e4\u05e8 \u05d1\u05e7\u05e9\u05d5\u05ea",
-                "\u05e1\u05d4\"\u05db \u05d1\u05e7\u05e9\u05d5\u05ea",
-                "\u05de\u05e1\u05e4\u05e8 \u05e6\u05e8\u05db\u05e0\u05d9\u05dd",
-                "\u05e1\u05d4\"\u05db \u05e6\u05e8\u05db\u05e0\u05d9\u05dd",
-                "total consumers",
-                "total requests",
-                "total",
-            ],
-            required=False,
-        )
-        if total_col is None:
-            numeric_candidates = [c for c in df.select_dtypes(include=["number"]).columns if c != year_month_col]
-            if numeric_candidates:
-                total_col = numeric_candidates[0]
-            else:
-                for col in df.columns:
-                    if col == year_month_col:
-                        continue
-                    coerced = pd.to_numeric(df[col], errors="coerce")
-                    if coerced.notna().sum() > 0:
-                        total_col = col
-                        df[col] = coerced
-                        break
-        if total_col is None:
-            raise KeyError("Missing expected total consumers column.")
+        year_month_col = PrivateSuppliersService._resolve_column(df, year_month_candidates, required=False)
+        total_col = PrivateSuppliersService._resolve_column(df, total_candidates, required=False)
+        sector_col = PrivateSuppliersService._resolve_column(df, sector_candidates, required=False)
+        meter_col = PrivateSuppliersService._resolve_column(df, meter_candidates, required=False)
+        regulation_col = PrivateSuppliersService._resolve_column(df, regulation_candidates, required=False)
+        status_col = PrivateSuppliersService._resolve_column(df, status_candidates, required=False)
+        rejection_col = PrivateSuppliersService._resolve_column(df, rejection_candidates, required=False)
 
-        sector_col = resolve_column(
-            [
-                "ביתי/ לא ביתי",
-                "ביתי/לא ביתי",
-                "ביתי / לא ביתי",
-                "מגזר",
-                "sector",
-            ],
-            required=False,
-        )
-        meter_col = resolve_column(
-            [
-                "סוג אסדרה",
-                "סוג המונה",
-                "סוג מונה",
-                "סוג אסדרה ",
-                "סוג אסדרה׳",
-                "meter type",
-            ],
-            required=False,
-        )
-        location_col = resolve_column(
-            [
-                "תחנות באספקה/ אסדרה קיימת",
-                "תחנות באספקה / אסדרה קיימת",
-                "מחוז",
-                "שם מחוז",
-                "שם יישוב",
-                "יישוב",
-                "אזור",
-                "region",
-                "district",
-                "location",
-            ],
-            required=False,
-        )
-
-        rename_map = {
-            year_month_col: "year_month",
-            total_col: "total_consumers",
-        }
+        rename_map: Dict[str, str] = {}
+        if year_month_col:
+            rename_map[year_month_col] = "year_month"
+        if total_col:
+            rename_map[total_col] = "total_consumers"
         if sector_col:
             rename_map[sector_col] = "sector"
         if meter_col:
             rename_map[meter_col] = "meter_type"
-        if location_col:
-            rename_map[location_col] = "location"
-
+        if regulation_col:
+            rename_map[regulation_col] = "regulation_type"
+        if status_col:
+            rename_map[status_col] = "status"
+        if rejection_col:
+            rename_map[rejection_col] = "rejection_reason"
         df = df.rename(columns=rename_map)
 
-        # Parse dates (YYYY/MM or YYYY-MM) into month start.
-        df["year_month"] = pd.to_datetime(df["year_month"], format="%Y/%m", errors="coerce").fillna(
-            pd.to_datetime(df["year_month"], format="%Y-%m", errors="coerce")
-        )
-        df = df.dropna(subset=["year_month"])
+        derived_month = False
+        if "year_month" in df.columns:
+            df["year_month"] = pd.to_datetime(
+                df["year_month"],
+                format="%Y/%m",
+                errors="coerce",
+            ).fillna(pd.to_datetime(df["year_month"], errors="coerce"))
+            df = df.dropna(subset=["year_month"])
+        else:
+            derived_month = True
+            month_ts = PrivateSuppliersService._derive_month_from_path(csv_path)
+            df["year_month"] = month_ts
 
-        # Coerce counts to numeric.
-        df["total_consumers"] = pd.to_numeric(df.get("total_consumers"), errors="coerce").fillna(0)
+        if "total_consumers" in df.columns:
+            df["total_consumers"] = pd.to_numeric(df["total_consumers"], errors="coerce").fillna(0)
+        else:
+            # This dataset is per-connection; count rows as consumers.
+            df["total_consumers"] = 1
 
         df["month"] = df["year_month"].dt.to_period("M").dt.to_timestamp()
         df["month_label"] = df["month"].dt.strftime("%Y-%m")
-        return df
+
+        if "sector" in df.columns:
+            df["sector"] = df["sector"].apply(PrivateSuppliersService._translate_value)
+        if "meter_type" in df.columns:
+            df["meter_type"] = df["meter_type"].apply(PrivateSuppliersService._translate_meter)
+        if "regulation_type" in df.columns:
+            df["regulation_type"] = df["regulation_type"].apply(PrivateSuppliersService._translate_value)
+        if "status" in df.columns:
+            df["status"] = df["status"].apply(PrivateSuppliersService._translate_value)
+        if "rejection_reason" in df.columns:
+            df["rejection_reason"] = df["rejection_reason"].apply(PrivateSuppliersService._translate_value)
+
+        if df.empty:
+            raise ValueError("No data rows found in private suppliers source.")
+
+        return df, derived_month
 
     @staticmethod
     def _default_range(monthly_totals: pd.DataFrame) -> Tuple[str, str]:
         max_month = monthly_totals["month"].max()
-        min_month = (max_month - pd.DateOffset(months=11)) if pd.notnull(max_month) else None
-        if min_month is None:
+        min_month = monthly_totals["month"].min()
+        if pd.isna(max_month) or pd.isna(min_month):
             raise ValueError("Unable to determine default date range from data.")
+        min_month = max_month - pd.DateOffset(months=11)
         return to_iso_date(min_month), to_iso_date(max_month)
 
     @staticmethod
@@ -210,9 +264,8 @@ class PrivateSuppliersService:
             .reset_index()
             .sort_values("month")
         )
-        # Build cumulative totals first, then compute deltas using prior cumulative (avoids negatives).
         grouped["cumulative_total"] = grouped["total_consumers"].cumsum()
-        grouped["new_additions"] = grouped["cumulative_total"].diff()
+        grouped["new_additions"] = grouped["cumulative_total"].diff().fillna(grouped["total_consumers"])
 
         min_month = grouped["month"].min()
         max_month = grouped["month"].max()
@@ -232,6 +285,10 @@ class PrivateSuppliersService:
         latest_month_label = to_iso_date(max_month)
         if start_dt < min_month:
             start_dt = min_month
+        if end_dt > max_month:
+            end_dt = max_month
+        if end_dt < start_dt:
+            end_dt = start_dt
 
         mask = (grouped["month"] >= start_dt) & (grouped["month"] <= end_dt)
         filtered = grouped.loc[mask].copy()
@@ -247,8 +304,8 @@ class PrivateSuppliersService:
             )
         return (
             records,
-            to_iso_date(requested_start) if requested_start else to_iso_date(start_dt),
-            to_iso_date(requested_end) if requested_end else to_iso_date(end_dt),
+            to_iso_date(start_dt),
+            to_iso_date(end_dt),
             earliest_month_label,
             latest_month_label,
         )
@@ -257,9 +314,11 @@ class PrivateSuppliersService:
     def _compute_segments(all_months: pd.DataFrame, start_dt, end_dt) -> Dict[str, List[Dict]]:
         segments: Dict[str, List[Dict]] = {}
         segment_mapping = {
-            "location": "location",
+            "regulation_type": "regulation_type",
             "sector": "sector",
             "meter_type": "meter_type",
+            "status": "status",
+            "rejection_reason": "rejection_reason",
         }
         for col, key in segment_mapping.items():
             if col not in all_months.columns:
@@ -288,20 +347,37 @@ class PrivateSuppliersService:
                         }
                     )
             segments[key] = segment_records
+        # Backward compatibility: if legacy "location" was present, expose as regulation_type.
+        if "location" in segments and "regulation_type" not in segments:
+            segments["regulation_type"] = segments.pop("location")
+        for expected in segment_mapping.values():
+            segments.setdefault(expected, [])
         return segments
 
     @staticmethod
-    @staticmethod
     def _translate_value(value: str) -> str:
         mapping = {
-            "אסדרה קיימת": "existing_regulation",
-            "תחנות באספקה": "competitive_supply",
             "ביתי": "residential",
             "לא ביתי": "non_residential",
-            "מספקים וירטואליים": "virtual_suppliers",
-            "מספקים עם אמצעי ייצור": "suppliers_with_generation",
+            "אסדרה קיימת": "existing_regulation",
+            "תחרות באספקה": "competitive_supply",
+            "חכם": "smart",
+            "בסיסי": "basic",
+            "נמוך": "low",
+            "גבוה": "high",
+            "עליון": "extra_high",
+            "approved": "approved",
+            "rejected": "rejected",
+            "reject": "rejected",
         }
-        return mapping.get(value, value)
+        text = str(value or "").strip()
+        if text in mapping:
+            return mapping[text]
+        lowered = text.lower().strip()
+        lowered = lowered.replace(" ", "_").replace("-", "_").replace("/", "_")
+        if lowered in mapping:
+            return mapping[lowered]
+        return lowered or "unknown"
 
     @staticmethod
     def _translate_meter(value: str) -> str:
@@ -315,47 +391,48 @@ class PrivateSuppliersService:
 
     @staticmethod
     def _translate_segment_value(key: str, value: str) -> str:
-        if key == "location":
-            return PrivateSuppliersService._translate_value(value)
         if key == "meter_type":
             return PrivateSuppliersService._translate_meter(value)
         return PrivateSuppliersService._translate_value(value)
 
-
     @staticmethod
     def get_data(start_date: Optional[str], end_date: Optional[str], csv_path: Optional[Path] = None) -> Dict:
-        df = PrivateSuppliersService._load_dataframe(csv_path)
+        df, derived_month = PrivateSuppliersService._load_dataframe(csv_path)
         monthly, start_iso, end_iso, earliest_month, latest_month = PrivateSuppliersService._compute_monthly(
             df, start_date, end_date
         )
-        # Filter window for segments uses month boundaries of the actual filtered data.
         start_dt = parse_date(start_iso).replace(day=1)
         end_dt = parse_date(end_iso).replace(day=1)
         segments = PrivateSuppliersService._compute_segments(df, start_dt, end_dt)
 
         notes: List[str] = []
-        requested_start_iso = None
         if start_date:
             try:
                 requested_start = parse_date(start_date)
-                requested_start_iso = to_iso_date(requested_start.replace(day=1))
                 if requested_start < parse_date(earliest_month):
                     notes.append(f"Data available from {earliest_month}; data begins from earliest available month.")
             except Exception:
-                requested_start_iso = start_date
+                pass
 
         if end_date:
             try:
                 requested_end = parse_date(end_date).replace(day=1)
-                if requested_end < parse_date(latest_month):
+                if requested_end < parse_date(earliest_month):
+                    notes.append(f"Requested end_date before available data; data begins from {earliest_month}.")
+                elif requested_end < parse_date(latest_month):
                     notes.append("Data clipped to requested end_date.")
+                elif requested_end > parse_date(latest_month):
+                    notes.append(f"Data clipped to latest available month {latest_month}.")
             except Exception:
                 pass
+
+        if derived_month:
+            notes.append("Month derived from file name/modified date because no date column was provided.")
 
         note = "; ".join(notes) if notes else None
 
         return {
-            "start_date": requested_start_iso or start_iso,
+            "start_date": start_iso,
             "end_date": end_iso,
             "unit": "count",
             "labels": {
@@ -374,8 +451,6 @@ class PrivateSuppliersService:
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             pd.DataFrame(payload.get("data", [])).to_excel(writer, sheet_name="Summary", index=False)
             for key, rows in payload.get("segments", {}).items():
-                if not rows:
-                    continue
                 pd.DataFrame(rows).to_excel(writer, sheet_name=key, index=False)
         buffer.seek(0)
         return buffer.getvalue()

@@ -19,7 +19,13 @@ async def get_data_file_status():
 
 @router.post("/upload")
 async def upload_data_file(
-    source: DataFileSource = Form(..., description="Data source: private_suppliers or switching_requests"),
+    source: DataFileSource = Form(
+        ...,
+        description=(
+            "Data source: private_suppliers (Files_Netunei_hashmal_mp_tzarchan) "
+            "or switching_requests (Files_Netunei_hashmal_mp_niyud)"
+        ),
+    ),
     file: UploadFile = File(...),
 ):
     if not file:
@@ -30,3 +36,4 @@ async def upload_data_file(
         "stored_as": saved_path.name,
         "message": "File uploaded. Re-run the target API to get the updated results.",
     }
+

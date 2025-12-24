@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import pandas as pd
+from io import BytesIO
 
 # Broadened key detection to better match NOGA SMP payloads.
 PRICE_WITH_CONSTRAINT_KEYS = [
@@ -236,3 +238,32 @@ class SMPProcessor:
 
         aggregated.sort(key=lambda x: x["period"])
         return aggregated
+
+
+    @staticmethod
+    def to_excel(payload: Dict) -> bytes:
+        """
+        Export SMP payload to Excel with key views.
+        """
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            summary_rows = [
+                {"metric": "start_date", "value": payload.get("start_date")},
+                {"metric": "end_date", "value": payload.get("end_date")},
+                {"metric": "view", "value": payload.get("view")},
+            ]
+            pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Summary", index=False)
+
+            for sheet, key in [
+                ("chart_with_constraints", "chart_with_constraints"),
+                ("chart_without_constraints", "chart_without_constraints"),
+                ("correlation", "correlation_view"),
+                ("daily_average", "daily_average"),
+                ("monthly_average", "monthly_average"),
+                ("samples", "samples"),
+            ]:
+                data = payload.get(key) or []
+                if data:
+                    pd.DataFrame(data).to_excel(writer, sheet_name=sheet, index=False)
+        buffer.seek(0)
+        return buffer.getvalue()
