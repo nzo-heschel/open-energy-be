@@ -30,6 +30,35 @@ HEADER_MARKERS = {
     "סוג אסדרה",
 }
 
+REJECTION_REASON_ORDER = [
+    "missing_power_of_attorney",
+    "meter_issues",
+    "request_form_issues",
+    "other",
+]
+
+
+def _normalize_reason(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text.replace("_", " ").replace("-", " ").replace("/", " ").strip().lower()
+
+
+REJECTION_REASON_MAP = {
+    _normalize_reason("missing_power_of_attorney"): "missing_power_of_attorney",
+    _normalize_reason("missing power of attorney"): "missing_power_of_attorney",
+    _normalize_reason("ייפוי כוח חסר/לא תקין"): "missing_power_of_attorney",
+    _normalize_reason("meter_issues"): "meter_issues",
+    _normalize_reason("meter issues"): "meter_issues",
+    _normalize_reason("בעיות תקשורת במונה"): "meter_issues",
+    _normalize_reason("request_form_issues"): "request_form_issues",
+    _normalize_reason("problems in filling out the request"): "request_form_issues",
+    _normalize_reason("בעיות במילוי בקשת הניוד"): "request_form_issues",
+    _normalize_reason("other"): "other",
+    _normalize_reason("אחר"): "other",
+}
+
 
 def _normalize_col(value: str) -> str:
     text = str(value or "").strip().lower()
@@ -73,6 +102,12 @@ def _translate_value(value: str) -> str:
         "מספקים וירטואליים": "virtual_suppliers",
         "הושלם": "approved",
         "נדחה": "rejected",
+        "???? ?????": "approved",
+        "???": "other",
+        "????? ??? ???/?? ????": "missing_power_of_attorney",
+        "????? ?????? ?????": "meter_issues",
+        "????? ?????? ???? ?????": "request_form_issues",
+
     }
     text = str(value or "").strip()
     if text in mapping:
@@ -82,6 +117,20 @@ def _translate_value(value: str) -> str:
     if lowered in mapping:
         return mapping[lowered]
     return lowered or "unknown"
+
+
+def _map_rejection_reason(value: str) -> str:
+    normalized = _normalize_reason(value)
+    mapped = REJECTION_REASON_MAP.get(normalized)
+    if mapped:
+        return mapped
+    if "power of attorney" in normalized or "?????" in normalized:
+        return "missing_power_of_attorney"
+    if "meter" in normalized or "????" in normalized:
+        return "meter_issues"
+    if "request" in normalized or "????" in normalized:
+        return "request_form_issues"
+    return "other"
 
 
 def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
@@ -123,6 +172,43 @@ def _group_sum(df: pd.DataFrame, key: str, value_col: str) -> List[Dict]:
     return results
 
 
+def _summarize_rejection_reasons(df: pd.DataFrame, value_col: str) -> List[Dict]:
+    if df.empty or "rejection_reason" not in df.columns:
+        return [{"label": reason, "count": 0} for reason in REJECTION_REASON_ORDER]
+    grouped = df.groupby("rejection_reason")[value_col].sum().to_dict()
+    results = []
+    for reason in REJECTION_REASON_ORDER:
+        results.append({"label": reason, "count": int(grouped.get(reason, 0))})
+    return results
+
+
+def _monthly_rejection_breakdown(df: pd.DataFrame, value_col: str) -> List[Dict]:
+    if df.empty or "rejection_reason" not in df.columns:
+        return []
+    grouped = (
+        df.groupby(["month_label", "rejection_reason"])[value_col]
+        .sum()
+        .reset_index()
+    )
+    pivot = grouped.pivot(index="month_label", columns="rejection_reason", values=value_col).fillna(0)
+    for reason in REJECTION_REASON_ORDER:
+        if reason not in pivot.columns:
+            pivot[reason] = 0
+    pivot = pivot[REJECTION_REASON_ORDER].sort_index()
+
+    results: List[Dict] = []
+    for month, row in pivot.iterrows():
+        item = {"month": month}
+        total = 0
+        for reason in REJECTION_REASON_ORDER:
+            count = int(row.get(reason, 0))
+            item[reason] = count
+            total += count
+        item["total_rejections"] = total
+        results.append(item)
+    return results
+
+
 def build_payload(
     customer_type: Optional[str] = None,
     year: Optional[int] = None,
@@ -160,9 +246,15 @@ def build_payload(
 
     status_reason_col = _resolve_column(
         df,
-        ["reasons for the status", "סיבות לסטטטוס", "סיבות לסטטוס", "סיבות לסטטטוס"],
+        [
+            "reasons for the status",
+            "\u05e1\u05d9\u05d1\u05d5\u05ea \u05dc\u05e1\u05e1\u05d8\u05d5\u05e1",
+            "\u05e1\u05d9\u05d1\u05d5\u05ea \u05dc\u05e1\u05d8\u05d8\u05d5\u05e1",
+            "\u05e1\u05d9\u05d1\u05d5\u05ea \u05dc\u05e1\u05d8\u05d8\u05d8\u05d5\u05e1",
+        ],
         required=False,
     )
+
     status_reason_details_col = _resolve_column(
         df,
         ["status reason details", "פירוט סיבת סטטוס"],
@@ -224,6 +316,15 @@ def build_payload(
 
     total_requests = int(df["requests_count"].sum())
 
+    rejected_df = df
+    if "status" in df.columns:
+        rejected_df = df[df["status"] == "rejected"].copy()
+    if "status_reason" in rejected_df.columns:
+        rejected_df["rejection_reason"] = rejected_df["status_reason"].apply(_map_rejection_reason)
+    elif "status_reason_details" in rejected_df.columns:
+        rejected_df["rejection_reason"] = rejected_df["status_reason_details"].apply(_map_rejection_reason)
+    total_rejections = int(rejected_df["requests_count"].sum()) if not rejected_df.empty else 0
+
     monthly_totals = (
         df.groupby("month_label")["requests_count"]
         .sum()
@@ -250,6 +351,10 @@ def build_payload(
             "label": "Number of requests by supply competition/existing regulation",
             "data": _group_sum(df, "competition_type", "requests_count") if "competition_type" in df.columns else [],
         },
+        "requests_by_rejection_reason": {
+            "label": "Number of requests by rejection reason",
+            "data": _summarize_rejection_reasons(rejected_df, "requests_count"),
+        },
     }
 
     return {
@@ -262,7 +367,9 @@ def build_payload(
         "start_year": min(available_years) if available_years else None,
         "charts": charts,
         "monthly_requests": monthly_totals,
+        "monthly_rejections_by_reason": _monthly_rejection_breakdown(rejected_df, "requests_count"),
         "total_requests": total_requests,
+        "total_rejections": total_rejections,
     }
 
 
@@ -273,10 +380,16 @@ def to_excel(payload: Dict) -> bytes:
             {"metric": "customer_type", "value": payload.get("filter", {}).get("customer_type")},
             {"metric": "year", "value": payload.get("filter", {}).get("year")},
             {"metric": "total_requests", "value": payload.get("total_requests")},
+            {"metric": "total_rejections", "value": payload.get("total_rejections")},
         ]
         pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Summary", index=False)
 
         pd.DataFrame(payload.get("monthly_requests", [])).to_excel(writer, sheet_name="Monthly", index=False)
+        pd.DataFrame(payload.get("monthly_rejections_by_reason", [])).to_excel(
+            writer,
+            sheet_name="Monthly_Rejections",
+            index=False,
+        )
 
         for key, chart in payload.get("charts", {}).items():
             data = chart.get("data") or []

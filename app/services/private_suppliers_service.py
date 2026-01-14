@@ -346,11 +346,12 @@ class PrivateSuppliersService:
                             "new_additions": float(row["new_additions"]),
                         }
                     )
-            segments[key] = segment_records
+            if segment_records:
+                segments[key] = segment_records
         # Backward compatibility: if legacy "location" was present, expose as regulation_type.
         if "location" in segments and "regulation_type" not in segments:
             segments["regulation_type"] = segments.pop("location")
-        for expected in segment_mapping.values():
+        for expected in ("regulation_type", "sector", "meter_type"):
             segments.setdefault(expected, [])
         return segments
 

@@ -268,66 +268,60 @@ LEGACY_EXAMPLES: Dict[tuple[str, str], Dict[str, Any]] = {
         "sample_response": ["200 OK"],
         "sample_response_body": [
             {
-                "filter": "all",
+                "filter": {"customer_type": "all", "year": "all"},
                 "unit": "count",
+                "available_years": [2021],
+                "start_year": 2021,
                 "charts": {
-                    "by_customer_type": {
-                        "label": "Requests_by customer type",
+                    "requests_by_status": {
+                        "label": "Number of requests by status",
                         "data": [
-                            {"label": "residential", "count": 279230},
-                            {"label": "non_residential", "count": 24603},
+                            {"label": "approved", "count": 611174},
+                            {"label": "rejected", "count": 277708},
                         ],
                     },
-                    "by_region": {
-                        "label": "Requests_by region",
+                    "requests_by_customer_type": {
+                        "label": "Number of requests by customer type",
                         "data": [
-                            {"label": "central", "count": 104728},
-                            {"label": "tel_aviv", "count": 59948},
-                            {"label": "south", "count": 39031},
-                            {"label": "haifa", "count": 37072},
-                            {"label": "jerusalem", "count": 25287},
-                            {"label": "north", "count": 19671},
-                            {"label": "judea_samaria", "count": 18002},
-                            {"label": "other", "count": 94},
+                            {"label": "residential", "count": 786336},
+                            {"label": "non_residential", "count": 102546},
                         ],
                     },
-                    "by_voltage": {
-                        "label": "Requests_by voltage level",
+                    "requests_by_regulation_type": {
+                        "label": "Number of requests by regulation type",
                         "data": [
-                            {"label": "low", "count": 301425},
-                            {"label": "high", "count": 2367},
-                            {"label": "extra_high", "count": 41},
+                            {"label": "suppliers_with_generation", "count": 472491},
                         ],
                     },
-                    "by_meter_type": {
-                        "label": "Requests_by meter type",
+                    "requests_by_competition_type": {
+                        "label": "Number of requests by supply competition/existing regulation",
                         "data": [
-                            {"label": "smart", "count": 217218},
-                            {"label": "basic", "count": 86615},
+                            {"label": "existing_regulation", "count": 472491},
                         ],
                     },
-                    "by_regulation": {
-                        "label": "Requests_by regulation",
+                    "requests_by_rejection_reason": {
+                        "label": "Number of requests by rejection reason",
                         "data": [
-                            {"label": "existing_regulation", "count": 196591},
-                            {"label": "competitive_supply", "count": 107242},
+                            {"label": "missing_power_of_attorney", "count": 12457},
+                            {"label": "meter_issues", "count": 8921},
+                            {"label": "request_form_issues", "count": 10132},
+                            {"label": "other", "count": 246198},
                         ],
                     },
-                    "by_connection_size": {
-                        "label": "Requests_by connection size (GVA)",
-                        "data": [
-                            {"label": "0-0.05", "count": 292011},
-                            {"label": "0.05-0.1", "count": 4323},
-                            {"label": "0.1-0.5", "count": 4429},
-                            {"label": "0.5-1", "count": 992},
-                            {"label": "1-5", "count": 1620},
-                            {"label": "5+", "count": 458},
-                        ],
-                    },
-                    "requests_by_status": {"label": "Requests_by status", "data": []},
-                    "requests_by_rejection_reason": {"label": "Requests_by rejection reason", "data": []},
-                    "total_requests": {"label": "Total requests", "data": [{"count": 303833}]},
                 },
+                "monthly_requests": [{"month": "2021-09", "requests": 157}],
+                "monthly_rejections_by_reason": [
+                    {
+                        "month": "2021-09",
+                        "missing_power_of_attorney": 12,
+                        "meter_issues": 3,
+                        "request_form_issues": 5,
+                        "other": 2,
+                        "total_rejections": 22,
+                    }
+                ],
+                "total_requests": 888882,
+                "total_rejections": 277708,
             }
         ],
     },
@@ -355,8 +349,8 @@ DESCRIPTIONS: Dict[str, str] = {
         "segment breakdowns (location, sector, meter type); defaults to the latest 12 months."
     ),
     "/api/v1/switching-requests": (
-        "Consumer supplier switching requests split by customer type, region, voltage, meter type, regulation, and "
-        "connection size, plus totals; optional customer_type filter."
+        "Consumer supplier switching requests split by status, customer type, regulation, competition type, and "
+        "rejection reason, plus monthly totals; optional customer_type and year filters."
     ),
 }
 

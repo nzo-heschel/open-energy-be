@@ -702,9 +702,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
         "total_consumers": 89519.0,
         "new_additions": 89519.0
       }
-    ],
-    "status": [],
-    "rejection_reason": []
+    ]
   },
   "note": "Month derived from file name/modified date because no date column was provided."
 }
@@ -763,6 +761,10 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
         {
           "label": "approved",
           "count": 611174
+        },
+        {
+          "label": "rejected",
+          "count": 277708
         }
       ]
     },
@@ -792,6 +794,27 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
           "count": 472491
         }
       ]
+    },
+    "requests_by_rejection_reason": {
+      "label": "Number of requests by rejection reason",
+      "data": [
+        {
+          "label": "missing_power_of_attorney",
+          "count": 12457
+        },
+        {
+          "label": "meter_issues",
+          "count": 8921
+        },
+        {
+          "label": "request_form_issues",
+          "count": 10132
+        },
+        {
+          "label": "other",
+          "count": 246198
+        }
+      ]
     }
   },
   "monthly_requests": [
@@ -800,7 +823,18 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
       "requests": 157
     }
   ],
-  "total_requests": 888882
+  "monthly_rejections_by_reason": [
+    {
+      "month": "2021-09",
+      "missing_power_of_attorney": 12,
+      "meter_issues": 3,
+      "request_form_issues": 5,
+      "other": 2,
+      "total_rejections": 22
+    }
+  ],
+  "total_requests": 888882,
+  "total_rejections": 277708
 }
 ```
 
