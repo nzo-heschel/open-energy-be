@@ -264,8 +264,7 @@ class PrivateSuppliersService:
             .reset_index()
             .sort_values("month")
         )
-        grouped["cumulative_total"] = grouped["total_consumers"].cumsum()
-        grouped["new_additions"] = grouped["cumulative_total"].diff().fillna(grouped["total_consumers"])
+        grouped["new_additions"] = grouped["total_consumers"].diff().fillna(grouped["total_consumers"])
 
         min_month = grouped["month"].min()
         max_month = grouped["month"].max()
@@ -298,7 +297,7 @@ class PrivateSuppliersService:
             records.append(
                 {
                     "month": row["month_label"],
-                    "total_consumers": float(row["cumulative_total"]),
+                    "total_consumers": float(row["total_consumers"]),
                     "new_additions": None if pd.isna(row["new_additions"]) else float(row["new_additions"]),
                 }
             )
@@ -335,14 +334,13 @@ class PrivateSuppliersService:
                 if segment_df.empty:
                     continue
                 segment_df = segment_df.sort_values("month")
-                segment_df["cumulative_total"] = segment_df["total_consumers"].cumsum()
-                segment_df["new_additions"] = segment_df["cumulative_total"].diff().fillna(segment_df["total_consumers"])
+                segment_df["new_additions"] = segment_df["total_consumers"].diff().fillna(segment_df["total_consumers"])
                 for _, row in segment_df.iterrows():
                     segment_records.append(
                         {
                             "month": row["month_label"],
                             key: PrivateSuppliersService._translate_segment_value(key, segment_value),
-                            "total_consumers": float(row["cumulative_total"]),
+                            "total_consumers": float(row["total_consumers"]),
                             "new_additions": float(row["new_additions"]),
                         }
                     )

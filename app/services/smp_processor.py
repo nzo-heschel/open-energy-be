@@ -188,6 +188,54 @@ class SMPProcessor:
         """
         Aggregate by day or month averages for the prices and net demand.
         """
+        # Monthly values should be the average of daily averages (not raw samples).
+        if by == "month":
+            daily = SMPProcessor._aggregate(records, by="day")
+            buckets: Dict[str, Dict[str, float | int]] = {}
+            for rec in daily:
+                period = rec.get("period")
+                if not period:
+                    continue
+                month_key = period[:7]  # YYYY-MM
+                bucket = buckets.setdefault(
+                    month_key,
+                    {
+                        "with_sum": 0.0,
+                        "without_sum": 0.0,
+                        "net_sum": 0.0,
+                        "count_with": 0,
+                        "count_without": 0,
+                        "count_net": 0,
+                    },
+                )
+                if rec.get("price_with_constraints") is not None:
+                    bucket["with_sum"] += rec["price_with_constraints"]  # type: ignore
+                    bucket["count_with"] += 1  # type: ignore
+                if rec.get("price_without_constraints") is not None:
+                    bucket["without_sum"] += rec["price_without_constraints"]  # type: ignore
+                    bucket["count_without"] += 1  # type: ignore
+                if rec.get("net_demand") is not None:
+                    bucket["net_sum"] += rec["net_demand"]  # type: ignore
+                    bucket["count_net"] += 1  # type: ignore
+
+            aggregated: List[Dict] = []
+            for bucket_key, values in buckets.items():
+                aggregated.append(
+                    {
+                        "period": bucket_key,
+                        "price_with_constraints": (
+                            values["with_sum"] / values["count_with"] if values["count_with"] else None
+                        ),
+                        "price_without_constraints": (
+                            values["without_sum"] / values["count_without"] if values["count_without"] else None
+                        ),
+                        "net_demand": values["net_sum"] / values["count_net"] if values["count_net"] else None,
+                    }
+                )
+
+            aggregated.sort(key=lambda x: x["period"])
+            return aggregated
+
         buckets: Dict[str, Dict[str, float | int]] = {}
 
         for rec in records:
