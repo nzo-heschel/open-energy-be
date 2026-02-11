@@ -44,7 +44,6 @@ PRICE_WITHOUT_CONSTRAINT_KEYS = [
     "smp_no_constraints",
 ]
 DEMAND_KEYS = ["actual_Demand", "actualDemand", "demand"]
-RENEWABLE_KEYS = ["renewableSum", "renewable_sum", "renewable"]
 
 
 def _as_float(value) -> Optional[float]:
@@ -266,13 +265,7 @@ class SMPProductionService:
                 )
                 if demand_value is None:
                     demand_value = demand_lookup.get(timestamp)
-                renewables_value = next(
-                    (val for key in RENEWABLE_KEYS if (val := _as_float(sample.get(key))) is not None),
-                    None,
-                )
-                net_demand = None
-                if demand_value is not None:
-                    net_demand = demand_value - (renewables_value or 0)
+                generation_value = demand_value
 
                 if price_with is not None or price_without is not None:
                     smp_series.append(
@@ -293,22 +286,22 @@ class SMPProductionService:
                     day_key = _day_key_iso(date_str)
                     daily_sums_without[day_key] = daily_sums_without.get(day_key, 0.0) + price_without
 
-                if net_demand is not None:
-                    net_demand_series.append({"timestamp": timestamp, "net_demand": net_demand})
+                if generation_value is not None:
+                    net_demand_series.append({"timestamp": timestamp, "net_demand": generation_value})
 
-                if smp_value is not None or net_demand is not None:
+                if smp_value is not None or generation_value is not None:
                     combined_series.append(
                         {
                             "timestamp": timestamp,
                             "smp": smp_value,
                             "price_with_constraints": price_with,
                             "price_without_constraints": price_without,
-                            "net_demand": net_demand,
+                            "net_demand": generation_value,
                         }
                     )
 
-                if smp_value is not None and net_demand is not None:
-                    correlation.append({"smp": smp_value, "net_demand": net_demand})
+                if smp_value is not None and generation_value is not None:
+                    correlation.append({"smp": smp_value, "net_demand": generation_value})
 
         if not smp_series:
             raise HTTPException(

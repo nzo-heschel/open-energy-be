@@ -149,14 +149,21 @@ class NogaService:
             agg["Non-renewables"] += sum([
                 v.get("coal", 0),
                 v.get("natural_Gas", 0),
-                v.get("mazut", 0)  # diesel
+                v.get("mazut", 0),  # diesel
+                v.get("diesel", 0),
+                v.get("Diesel", 0),
             ])
             agg["Renewables"] += sum([
                 v.get("photoVoltaic", 0),
                 v.get("bio_Gas", 0),
                 v.get("wind", 0),
                 v.get("termo_Soler", 0),
-                v.get("photovoltaicIntegrated", 0)
+                v.get("photovoltaicIntegrated", 0),
+                v.get("pv_storage", 0),
+                v.get("photovoltaic_storage", 0),
+                v.get("storage", 0),
+                v.get("batteries", 0),
+                v.get("pumpedStorageBattery", 0),
             ])
             agg["Other"] += sum([
                 v.get("other", 0),

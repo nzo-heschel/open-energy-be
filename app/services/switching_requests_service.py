@@ -114,6 +114,10 @@ def _translate_value(value: str) -> str:
         return mapping[text]
     lowered = text.lower().strip()
     lowered = lowered.replace(" ", "_").replace("-", "_").replace("/", "_")
+    if "reject" in lowered:
+        return "rejected"
+    if "approve" in lowered:
+        return "approved"
     if lowered in mapping:
         return mapping[lowered]
     return lowered or "unknown"
@@ -316,9 +320,16 @@ def build_payload(
 
     total_requests = int(df["requests_count"].sum())
 
-    rejected_df = df
-    if "status" in df.columns:
+    rejected_df = df.copy()
+    status_present = "status" in df.columns
+    if status_present:
         rejected_df = df[df["status"] == "rejected"].copy()
+
+    reason_cols = [c for c in ("status_reason", "status_reason_details") if c in df.columns]
+    if rejected_df.empty and reason_cols:
+        # Fallback: if status mapping fails, infer rejections by presence of a reason.
+        rejected_df = df[df[reason_cols].notna().any(axis=1)].copy()
+
     if "status_reason" in rejected_df.columns:
         rejected_df["rejection_reason"] = rejected_df["status_reason"].apply(_map_rejection_reason)
     elif "status_reason_details" in rejected_df.columns:
@@ -336,23 +347,23 @@ def build_payload(
 
     charts = {
         "requests_by_status": {
-            "label": "Number of requests by status",
+            "label": "Total requests by status",
             "data": _group_sum(df, "status", "requests_count") if "status" in df.columns else [],
         },
         "requests_by_customer_type": {
-            "label": "Number of requests by customer type",
+            "label": "Total requests by customer type",
             "data": _group_sum(df, "customer_type", "requests_count") if "customer_type" in df.columns else [],
         },
         "requests_by_regulation_type": {
-            "label": "Number of requests by regulation type",
+            "label": "Total requests by regulation type",
             "data": _group_sum(df, "regulation_type", "requests_count") if "regulation_type" in df.columns else [],
         },
         "requests_by_competition_type": {
-            "label": "Number of requests by supply competition/existing regulation",
+            "label": "Total requests by supply competition/existing regulation",
             "data": _group_sum(df, "competition_type", "requests_count") if "competition_type" in df.columns else [],
         },
         "requests_by_rejection_reason": {
-            "label": "Number of requests by rejection reason",
+            "label": "Number of rejections by reason",
             "data": _summarize_rejection_reasons(rejected_df, "requests_count"),
         },
     }

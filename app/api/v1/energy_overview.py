@@ -10,13 +10,13 @@ router = APIRouter(prefix="/energy", tags=["Energy Overview"])
 
 def _resolve_overview_dates(start_date: str | None, end_date: str | None):
     """
-    Use provided dates or default to the last 12 months (non-calendar).
+    Use provided dates or default to the last 7 days.
     """
     if start_date and end_date:
         return resolve_date_range(start_date, end_date, default_days=365)
 
     today = datetime.now()
-    return today - timedelta(days=365), today
+    return today - timedelta(days=7), today
 
 
 def _infer_filter(start_dt, end_dt):

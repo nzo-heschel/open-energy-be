@@ -59,7 +59,8 @@ class EnergyOverviewService:
                 "photovoltaic": 0,
                 "biogas": 0,
                 "wind": 0,
-                "solar": 0
+                "solar": 0,
+                "pv_storage": 0
             },
             "other": {
                 "other": 0,
@@ -74,15 +75,26 @@ class EnergyOverviewService:
             # Fossil
             level2["non_renewables"]["coal"] += sum_keys(h, ["coal"])
             level2["non_renewables"]["natural_gas"] += sum_keys(h, ["natural_Gas", "natural_gas"])
-            level2["non_renewables"]["diesel"] += sum_keys(h, ["mazut", "diesel"])
+            level2["non_renewables"]["diesel"] += sum_keys(h, ["mazut", "diesel", "Diesel"])
 
             # Renewable
             level2["renewables"]["photovoltaic"] += sum_keys(
-                h, ["photoVoltaic", "photovoltaic", "photovoltaicIntegrated"]
+                h, ["photoVoltaic", "photovoltaic", "photo_voltaic"]
             )
             level2["renewables"]["biogas"] += sum_keys(h, ["bio_Gas", "biogas"])
             level2["renewables"]["wind"] += sum_keys(h, ["wind"])
             level2["renewables"]["solar"] += sum_keys(h, ["termo_Soler", "solar"])
+            level2["renewables"]["pv_storage"] += sum_keys(
+                h,
+                [
+                    "photovoltaicIntegrated",
+                    "pv_storage",
+                    "photovoltaic_storage",
+                    "storage",
+                    "batteries",
+                    "pumpedStorageBattery",
+                ],
+            )
 
             # Other
             level2["other"]["other"] += sum_keys(h, ["other"])

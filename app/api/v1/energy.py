@@ -18,7 +18,9 @@ load_dotenv()
 
 router = APIRouter(prefix="/energy", tags=["Energy"])
 # Keep default windows small to avoid slow/broken proxy downloads; override via env if needed.
-DEFAULT_RANGE_DAYS = int(os.getenv("ENERGY_PRODUCTION_MIX_DEFAULT_DAYS", "365"))
+DEFAULT_RANGE_DAYS = int(os.getenv("ENERGY_PRODUCTION_MIX_DEFAULT_DAYS", "7"))
+MONTH_VIEW_DEFAULT_DAYS = int(os.getenv("ENERGY_PRODUCTION_MIX_MONTH_DAYS", "7"))
+YEAR_VIEW_DEFAULT_DAYS = int(os.getenv("ENERGY_PRODUCTION_MIX_YEAR_DAYS", "3650"))
 
 
 class Granularity(str, Enum):
@@ -59,26 +61,50 @@ def hourly_average(values):
     return hourly
 
 
+def _sum_keys(entry: Dict, keys: List[str]) -> float:
+    return sum(entry.get(k, 0) or 0 for k in keys)
+
+
+# Source key variants to keep fossil/renewable categories complete.
+COAL_KEYS = ["coal"]
+NATURAL_GAS_KEYS = ["natural_Gas", "natural_gas"]
+DIESEL_KEYS = ["mazut", "diesel", "Diesel"]
+PHOTOVOLTAIC_KEYS = ["photoVoltaic", "photovoltaic", "photo_voltaic"]
+BIOGAS_KEYS = ["bio_Gas", "biogas"]
+WIND_KEYS = ["wind"]
+SOLAR_THERMAL_KEYS = ["termo_Soler", "solar", "solar_thermal"]
+PV_STORAGE_KEYS = [
+    "photovoltaicIntegrated",
+    "pv_storage",
+    "photovoltaic_storage",
+    "storage",
+    "batteries",
+    "pumpedStorageBattery",
+]
+OTHER_KEYS = ["other"]
+PUMPED_STORAGE_KEYS = ["pumpedStorage", "pumped_storage"]
+
+
 def _aggregate_level2(hourly_values):
     """
     Aggregate hourly values into Delivery-1 Level-2 buckets.
     """
     level2 = {
         "Non-renewables": {
-            "coal": sum(v.get("coal", 0) for v in hourly_values),
-            "natural_gas": sum(v.get("natural_Gas", 0) for v in hourly_values),
-            "diesel": sum(v.get("mazut", 0) for v in hourly_values),
+            "coal": sum(_sum_keys(v, COAL_KEYS) for v in hourly_values),
+            "natural_gas": sum(_sum_keys(v, NATURAL_GAS_KEYS) for v in hourly_values),
+            "diesel": sum(_sum_keys(v, DIESEL_KEYS) for v in hourly_values),
         },
         "Renewables": {
-            "photoVoltaic": sum(v.get("photoVoltaic", 0) for v in hourly_values),
-            "biogas": sum(v.get("bio_Gas", 0) for v in hourly_values),
-            "wind": sum(v.get("wind", 0) for v in hourly_values),
-            "solar_thermal": sum(v.get("termo_Soler", 0) for v in hourly_values),
-            "pv_storage": sum(v.get("photovoltaicIntegrated", 0) for v in hourly_values),
+            "photoVoltaic": sum(_sum_keys(v, PHOTOVOLTAIC_KEYS) for v in hourly_values),
+            "biogas": sum(_sum_keys(v, BIOGAS_KEYS) for v in hourly_values),
+            "wind": sum(_sum_keys(v, WIND_KEYS) for v in hourly_values),
+            "solar_thermal": sum(_sum_keys(v, SOLAR_THERMAL_KEYS) for v in hourly_values),
+            "pv_storage": sum(_sum_keys(v, PV_STORAGE_KEYS) for v in hourly_values),
         },
         "Other": {
-            "other": sum(v.get("other", 0) for v in hourly_values),
-            "pumped_storage": sum(v.get("pumpedStorage", 0) for v in hourly_values),
+            "other": sum(_sum_keys(v, OTHER_KEYS) for v in hourly_values),
+            "pumped_storage": sum(_sum_keys(v, PUMPED_STORAGE_KEYS) for v in hourly_values),
         }
     }
     return level2
@@ -108,8 +134,8 @@ def _default_days_for_view(view: Granularity) -> int:
     if view == Granularity.DAY:
         return 1
     if view == Granularity.MONTH:
-        return 31
-    return DEFAULT_RANGE_DAYS
+        return MONTH_VIEW_DEFAULT_DAYS
+    return YEAR_VIEW_DEFAULT_DAYS
 
 
 def _filter_raw_values(values, start_dt, end_dt):
@@ -178,16 +204,16 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
         )
 
         # Top-level aggregates
-        coal_v = hv.get("coal", 0)
-        natural_gas_v = hv.get("natural_Gas", 0)
-        mazut_v = hv.get("mazut", 0)
-        photo_v = hv.get("photoVoltaic", 0)
-        bio_gas_v = hv.get("bio_Gas", 0)
-        wind_v = hv.get("wind", 0)
-        termo_v = hv.get("termo_Soler", 0)
-        pv_integrated_v = hv.get("photovoltaicIntegrated", 0)
-        other_v = hv.get("other", 0)
-        pumped_v = hv.get("pumpedStorage", 0)
+        coal_v = _sum_keys(hv, COAL_KEYS)
+        natural_gas_v = _sum_keys(hv, NATURAL_GAS_KEYS)
+        mazut_v = _sum_keys(hv, DIESEL_KEYS)
+        photo_v = _sum_keys(hv, PHOTOVOLTAIC_KEYS)
+        bio_gas_v = _sum_keys(hv, BIOGAS_KEYS)
+        wind_v = _sum_keys(hv, WIND_KEYS)
+        termo_v = _sum_keys(hv, SOLAR_THERMAL_KEYS)
+        pv_integrated_v = _sum_keys(hv, PV_STORAGE_KEYS)
+        other_v = _sum_keys(hv, OTHER_KEYS)
+        pumped_v = _sum_keys(hv, PUMPED_STORAGE_KEYS)
 
         bucket["non_renewables"] += coal_v + natural_gas_v + mazut_v
         bucket["renewables"] += photo_v + bio_gas_v + wind_v + termo_v + pv_integrated_v
