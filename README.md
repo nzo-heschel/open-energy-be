@@ -29,7 +29,7 @@ The service is designed for dashboards, analytics platforms, energy market analy
 - **Collects** real-time and historical electricity generation data from NOGA (Israel's Independent System Operator)
 - **Processes** high-frequency (5-minute interval) raw measurements into hourly averages
 - **Aggregates** energy sources into hierarchical, human-readable categories (fossil, renewable, other)
-- **Calculates** key metrics: renewable percentage, total generation, pricing, market trends
+- **Calculates** key metrics: renewable percentage, total generation, pricing, market trends, CO2 emissions
 - **Exposes** processed data via REST API endpoints returning JSON and Excel exports
 - **Tracks** market data: System Marginal Price (SMP), private supplier connections, consumer switching requests
 
@@ -44,6 +44,7 @@ The service is designed for dashboards, analytics platforms, energy market analy
 ✅ **System Marginal Price (SMP)** — Real-time and historical electricity pricing  
 ✅ **Private Suppliers Tracking** — Monitor private supplier connections by segment  
 ✅ **Consumer Switching Requests** — Analyze supplier switching trends  
+✅ **CO2 Emissions Insights** — Savings, ratio, mix, and emissions over time  
 ✅ **UI-Optimized Endpoints** — Data formatted with colors for frontend visualization  
 ✅ **Interactive Documentation** — Swagger UI + ReDoc for exploration and testing  
 ✅ **Error Handling** — Graceful responses with meaningful error messages
@@ -72,6 +73,12 @@ open-energy-be/
 app/
   api/
     v1/
+      co2_emission_savings.py
+      co2_emissions_mix.py
+      co2_emissions_over_time.py
+      co2_emissions_ratio.py
+      co2_total_production.py
+      co2_total_vs_ratio.py
       api_catalog.py
       data_files.py
       energy.py
@@ -91,6 +98,8 @@ app/
   services/
     data_file_manager.py
     demand_service.py
+    co2_emission_savings_processor.py
+    co2_emission_savings_service_.py
     energy_mix_processor.py
     energy_mix_service.py
     energy_overview_service.py
@@ -168,6 +177,7 @@ docker-compose up -d
 
 ```
 NOGA_API_TOKEN
+CO2_TOKEN
 SMP_TOKEN
 INTERNAL_API_KEY
 PROXY_URL
@@ -176,7 +186,7 @@ PROXY_URL
 **Using with Docker:**
 
 ```powershell
-docker run -d -p 8000:8000 -e NOGA_API_TOKEN="token" open-energy-be
+docker run -d -p 8000:8000 -e NOGA_API_TOKEN="token" -e CO2_TOKEN="token" open-energy-be
 ```
 
 ---
@@ -216,6 +226,8 @@ Once running, access interactive documentation at:
 │  API Routes (app/api/v1/)                            │
 │  ├─ energy.py                                        │
 │  ├─ energy_overview.py                               │
+│  ├─ co2_emission_savings.py                          │
+│  ├─ co2_emissions_mix.py                             │
 │  ├─ smp.py                                           │
 │  ├─ private_suppliers.py                             │
 │  └─ switching_requests.py
@@ -224,6 +236,8 @@ Once running, access interactive documentation at:
 │           ▼                                          │
 │  Services Layer (app/services/)                      │
 │  ├─ noga_service.py (fetch data)                     │
+│  ├─ co2_emission_savings_service_.py (fetch CO2)      │
+│  ├─ co2_emission_savings_processor.py (parse/agg)     │
 │  ├─ energy_mix_processor.py (process)                │
 │  ├─ smp_processor.py (calculate)                     │
 │  └─ *_service.py (aggregate)                         │
@@ -237,7 +251,7 @@ Once running, access interactive documentation at:
                        ▼
 ┌──────────────────────────────────────────────────────┐
 │           External Data Sources                      │
-│  ├─ NOGA API (production mix, pricing)               │
+│  ├─ NOGA API (production mix, pricing, CO2)          │
 │  ├─ CSV Files (private suppliers, switching)         │
 │  └─ Mock Services (testing)                          │
 └──────────────────────────────────────────────────────┘
@@ -852,7 +866,239 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ---
 
-### 7. Data Files Endpoints
+### 7. CO2 Emissions (Delivery 3) Endpoints
+
+#### `GET /api/v1/co2/emissions-savings`
+
+**Description:** Total CO2 emissions (coal + natural gas + diesel) for the selected period
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+
+**Response (200 OK):**
+
+```json
+{
+  "total": 2505223.89,
+  "unit": "tons CO2",
+  "start_date": "2026-01-03",
+  "end_date": "2026-02-02"
+}
+```
+
+---
+
+#### `GET /api/v1/co2/emissions-ratio`
+
+**Description:** Total CO2 emissions ratio (tons CO2 per MWh) for the selected period
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+
+**Response (200 OK):**
+
+```json
+{
+  "total": 261.1633,
+  "unit": "tons CO2/MWh",
+  "start_date": "2026-01-03",
+  "end_date": "2026-02-02"
+}
+```
+
+---
+
+#### `GET /api/v1/co2/total-production`
+
+**Description:** Total system generation (MWh) for the selected period
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+
+**Response (200 OK):**
+
+```json
+{
+  "total": 7036671.71,
+  "unit": "MWh",
+  "start_date": "2026-01-03",
+  "end_date": "2026-02-02"
+}
+```
+
+---
+
+#### `GET /api/v1/co2/emissions-mix`
+
+**Description:** CO2 emissions mix (pie chart + infographics + time series)
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, day | month | year)
+
+**Response (200 OK):**
+
+```json
+{
+  "view": "month",
+  "start_date": "2026-01-03",
+  "end_date": "2026-02-02",
+  "total_emissions": 2505223.89,
+  "total_emissions_unit": "tons CO2",
+  "emissions_per_kwh": 0.000356,
+  "emissions_per_kwh_unit": "tons CO2/kWh",
+  "total_generation_mwh": 7036671.71,
+  "pie_chart": {
+    "coal": {
+      "value": 391019.99,
+      "percentage": 15.61,
+      "unit": "tons CO2"
+    },
+    "natural_gas": {
+      "value": 2093868.51,
+      "percentage": 83.58,
+      "unit": "tons CO2"
+    },
+    "diesel": {
+      "value": 20335.38,
+      "percentage": 0.81,
+      "unit": "tons CO2"
+    }
+  },
+  "infographics": {
+    "total_emissions_excluding_renewables": {
+      "value": 2505223.89,
+      "unit": "tons CO2",
+      "description": "Total CO2 emissions from fossil fuels (coal + gas + diesel)"
+    },
+    "emissions_avoided_through_renewables": {
+      "value": 1364945.55,
+      "unit": "tons CO2",
+      "description": "Estimated CO2 emissions avoided due to renewable energy generation (assuming 0.55t/MWh baseline)"
+    }
+  },
+  "time_series": [
+    {
+      "period": "2026-01-03",
+      "label": "03 Jan",
+      "coal": 12431.86,
+      "natural_gas": 64471.12,
+      "diesel": 39.73,
+      "total_emissions": 76942.7,
+      "generation_mwh": 218258.07,
+      "emissions_per_kwh": 0.000353,
+      "unit": "tons CO2"
+    }
+  ]
+}
+```
+
+---
+
+#### `GET /api/v1/co2/emissions-over-time`
+
+**Description:** CO2 emissions over time (chart + infographics)
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, month | year | custom)
+
+**Response (200 OK):**
+
+```json
+{
+  "view": "month",
+  "start_date": "2026-01-03",
+  "end_date": "2026-02-02",
+  "infographics": {
+    "total_emissions_excluding_renewables": {
+      "value": 2505223.89,
+      "unit": "tons CO2",
+      "description": "Total CO2 emissions from fossil fuels (coal + gas + diesel)"
+    },
+    "emissions_avoided_through_renewables": {
+      "value": 1364945.55,
+      "unit": "tons CO2",
+      "description": "Estimated CO2 emissions avoided due to renewable energy generation"
+    }
+  },
+  "chart_data": [
+    {
+      "period": "2026-01-03",
+      "label": "03 Jan",
+      "coal": 12431.86,
+      "natural_gas": 64471.12,
+      "diesel": 39.73,
+      "total_emissions": 76942.7,
+      "emissions_per_kwh": 0.000353,
+      "unit": "tons CO2"
+    }
+  ]
+}
+```
+
+---
+
+#### `GET /api/v1/co2/total-vs-ratio`
+
+**Description:** Total CO2 emissions vs CO2 emissions ratio (combined chart + infographics)
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, month | year | custom)
+
+**Response (200 OK):**
+
+```json
+{
+  "view": "month",
+  "start_date": "2026-01-03",
+  "end_date": "2026-02-02",
+  "infographics": {
+    "total_emissions_excluding_renewables": {
+      "value": 2505223.89,
+      "unit": "tons CO2",
+      "description": "Total CO2 emissions from fossil fuels (coal + gas + diesel)"
+    },
+    "emissions_avoided_through_renewables": {
+      "value": 1364945.55,
+      "unit": "tons CO2",
+      "description": "Estimated CO2 emissions avoided due to renewable energy generation"
+    }
+  },
+  "chart_data": [
+    {
+      "period": "2026-01-03",
+      "label": "03 Jan",
+      "total_emissions": 76942.7,
+      "emissions_ratio": 8.4958,
+      "coal": 12431.86,
+      "natural_gas": 64471.12,
+      "diesel": 39.73,
+      "generation_mwh": 218258.07,
+      "emissions_per_kwh": 0.000353,
+      "unit_emissions": "tons CO2",
+      "unit_ratio": "tons CO2/MWh"
+    }
+  ]
+}
+```
+
+---
+
+### 8. Data Files Endpoints
 
 #### `GET /api/v1/data-files/status`
 
@@ -901,7 +1147,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 ---
 
 
-### 8. API Catalog Endpoint
+### 9. API Catalog Endpoint
 
 
 #### `GET /api/v1/apis/`
@@ -1083,7 +1329,7 @@ pip install -r requirements.txt
 
 **Solution:**
 
-- Check `NOGA_API_TOKEN` is set correctly
+- Check `NOGA_API_TOKEN` / `CO2_TOKEN` are set correctly
 - Verify network connectivity
 - Check NOGA service status
 
@@ -1130,6 +1376,6 @@ docker-compose up -d
 
 ### Environment Configuration for Production
 
-- Set actual `NOGA_API_TOKEN`, `PROXY_URL`, `INTERNAL_API_KEY`, `SMP_TOKEN`
+- Set actual `NOGA_API_TOKEN`, `CO2_TOKEN`, `PROXY_URL`, `INTERNAL_API_KEY`, `SMP_TOKEN`
 
 ---

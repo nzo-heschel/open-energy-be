@@ -18,6 +18,13 @@ from app.api.v1 import smp
 from app.api.v1 import smp_production_vs_marginal_price
 from app.api.v1 import switching_requests
 from fastapi.middleware.cors import CORSMiddleware
+# Delivery 3
+from app.api.v1 import co2_emission_savings
+from app.api.v1 import co2_emissions_ratio
+from app.api.v1 import co2_total_production
+from app.api.v1 import co2_emissions_mix
+from app.api.v1 import co2_emissions_over_time
+from app.api.v1 import co2_total_vs_ratio
 
 
 # from app.config import configure_global_proxy
@@ -76,7 +83,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+# Delivery 1
 app.include_router(energy_overview.router, prefix="/api/v1")
 app.include_router(energy.router, prefix="/api/v1")
 app.include_router(data_files.router, prefix="/api/v1")
@@ -88,6 +95,14 @@ app.include_router(smp_production_vs_marginal_price.router, prefix="/api/v1")
 app.include_router(private_suppliers.router, prefix="/api/v1")
 app.include_router(switching_requests.router, prefix="/api/v1")
 app.include_router(api_catalog.router, prefix="/api/v1")
+# Delivery 3 - CO2 endpoints
+app.include_router(co2_emission_savings.router, prefix="/api/v1")
+app.include_router(co2_emissions_ratio.router, prefix="/api/v1")
+app.include_router(co2_total_production.router, prefix="/api/v1")
+app.include_router(co2_emissions_mix.router, prefix="/api/v1")
+app.include_router(co2_emissions_over_time.router, prefix="/api/v1")
+app.include_router(co2_total_vs_ratio.router, prefix="/api/v1")
+
 
 
 @app.on_event("startup")
