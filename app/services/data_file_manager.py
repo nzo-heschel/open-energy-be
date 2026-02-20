@@ -67,7 +67,10 @@ def _age_days(path: Path) -> float:
     return (datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)).total_seconds() / 86400
 
 
-def ensure_fresh_data_file(dataset: Union[str, DataFileSource]) -> Path:
+def ensure_fresh_data_file(
+    dataset: Union[str, DataFileSource],
+    allow_stale: bool = False,
+) -> Path:
     """
     Return path to the freshest file for the dataset.
     Raise 428 if missing or older than MAX_AGE_DAYS.
@@ -85,6 +88,8 @@ def ensure_fresh_data_file(dataset: Union[str, DataFileSource]) -> Path:
 
     age_days = _age_days(path)
     if age_days > MAX_AGE_DAYS:
+        if allow_stale:
+            return path
         raise HTTPException(
             status_code=428,
             detail=(

@@ -12,7 +12,7 @@ import pandas as pd
 
 from app.utils.date_utils import parse_date, to_iso_date
 from app.utils.enums import DataFileSource
-from app.services.data_file_manager import ensure_fresh_data_file
+from app.services.data_file_manager import ensure_fresh_data_file, data_file_status
 
 DEFAULT_CSV_PATH = Path(os.getenv("PRIVATE_SUPPLIERS_CSV_PATH", "Files_Netunei_hashmal_mp_tzarchan.csv"))
 HEADER_MARKERS = {
@@ -99,7 +99,7 @@ class PrivateSuppliersService:
 
     @staticmethod
     def _load_dataframe(csv_path: Optional[Path] = None) -> Tuple[pd.DataFrame, bool]:
-        csv_path = csv_path or ensure_fresh_data_file(DataFileSource.PRIVATE_SUPPLIERS)
+        csv_path = csv_path or ensure_fresh_data_file(DataFileSource.PRIVATE_SUPPLIERS, allow_stale=True)
 
         df: Optional[pd.DataFrame] = None
         last_err: Optional[Exception] = None
@@ -397,6 +397,7 @@ class PrivateSuppliersService:
     @staticmethod
     def get_data(start_date: Optional[str], end_date: Optional[str], csv_path: Optional[Path] = None) -> Dict:
         df, derived_month = PrivateSuppliersService._load_dataframe(csv_path)
+        status = data_file_status(DataFileSource.PRIVATE_SUPPLIERS)
         monthly, start_iso, end_iso, earliest_month, latest_month = PrivateSuppliersService._compute_monthly(
             df, start_date, end_date
         )
@@ -427,6 +428,13 @@ class PrivateSuppliersService:
 
         if derived_month:
             notes.append("Month derived from file name/modified date because no date column was provided.")
+
+        if status.get("status") == "stale":
+            age_days = status.get("age_days")
+            age_text = str(int(age_days)) if isinstance(age_days, (int, float)) else "an unknown number of"
+            notes.append(
+                f"Data file is old ({age_text} days). Upload a fresh file for the latest readings."
+            )
 
         note = "; ".join(notes) if notes else None
 

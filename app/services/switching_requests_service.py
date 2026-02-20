@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from app.utils.enums import DataFileSource
-from app.services.data_file_manager import ensure_fresh_data_file
+from app.services.data_file_manager import ensure_fresh_data_file, data_file_status
 
 DEFAULT_CSV_PATH = Path(os.getenv("SWITCHING_REQUESTS_CSV_PATH", "Files_Netunei_hashmal_mp_niyud.xlsx"))
 HEADER_MARKERS = {
@@ -138,7 +138,7 @@ def _map_rejection_reason(value: str) -> str:
 
 
 def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
-    csv_path = csv_path or ensure_fresh_data_file(DataFileSource.SWITCHING_REQUESTS)
+    csv_path = csv_path or ensure_fresh_data_file(DataFileSource.SWITCHING_REQUESTS, allow_stale=True)
     df = None
     if csv_path.suffix.lower() in (".xls", ".xlsx"):
         try:
@@ -219,6 +219,7 @@ def build_payload(
     csv_path: Optional[Path] = None,
 ) -> Dict:
     df = _load_dataframe(csv_path)
+    status = data_file_status(DataFileSource.SWITCHING_REQUESTS)
 
     year_month_col = _resolve_column(
         df,
@@ -368,7 +369,7 @@ def build_payload(
         },
     }
 
-    return {
+    payload = {
         "filter": {
             "customer_type": customer_type or "all",
             "year": year or "all",
@@ -382,6 +383,15 @@ def build_payload(
         "total_requests": total_requests,
         "total_rejections": total_rejections,
     }
+
+    if status.get("status") == "stale":
+        age_days = status.get("age_days")
+        age_text = str(int(age_days)) if isinstance(age_days, (int, float)) else "an unknown number of"
+        payload["note"] = (
+            f"Data file is old ({age_text} days). Upload a fresh file for the latest readings."
+        )
+
+    return payload
 
 
 def to_excel(payload: Dict) -> bytes:
