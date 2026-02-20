@@ -3,9 +3,12 @@ import os
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from enum import Enum
+from io import BytesIO
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
+import pandas as pd
 
 from app.services.co2_emission_savings_service_ import NogaCO2Service
 from app.services.co2_emission_savings_processor import CO2Processor
@@ -171,6 +174,22 @@ async def get_emissions_mix(
         raise HTTPException(status_code=424, detail=f"Failed to compute CO2 emissions mix: {str(e)}")
 
 
+@router.get("/emissions-mix/export")
+async def export_emissions_mix(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    view: ViewFilter = Query(default=ViewFilter.MONTH, description="Filter: day, month, year"),
+):
+    payload = await get_emissions_mix(start_date=start_date, end_date=end_date, view=view)
+    contents = _to_excel_bytes(payload)
+    filename = f"co2_emissions_mix_{payload['start_date']}_to_{payload['end_date']}.xlsx"
+    return StreamingResponse(
+        iter([contents]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 def _build_time_series(raw: List[Dict], view: ViewFilter, start_dt: datetime, end_dt: datetime) -> List[Dict]:
     """
     Build time series data bucketed according to the view filter.
@@ -256,3 +275,52 @@ def _build_time_series(raw: List[Dict], view: ViewFilter, start_dt: datetime, en
         })
 
     return series
+
+
+def _to_excel_bytes(payload: Dict) -> bytes:
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        summary_rows = [
+            {"metric": "view", "value": payload.get("view")},
+            {"metric": "start_date", "value": payload.get("start_date")},
+            {"metric": "end_date", "value": payload.get("end_date")},
+            {"metric": "total_emissions", "value": payload.get("total_emissions")},
+            {"metric": "total_emissions_unit", "value": payload.get("total_emissions_unit")},
+            {"metric": "emissions_per_kwh", "value": payload.get("emissions_per_kwh")},
+            {"metric": "emissions_per_kwh_unit", "value": payload.get("emissions_per_kwh_unit")},
+            {"metric": "total_generation_mwh", "value": payload.get("total_generation_mwh")},
+        ]
+        pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Summary", index=False)
+
+        pie = payload.get("pie_chart") or {}
+        if isinstance(pie, dict) and pie:
+            pie_rows = []
+            for fuel, data in pie.items():
+                row = {
+                    "fuel": fuel,
+                    "value": (data or {}).get("value"),
+                    "percentage": (data or {}).get("percentage"),
+                    "unit": (data or {}).get("unit"),
+                }
+                pie_rows.append(row)
+            pd.DataFrame(pie_rows).to_excel(writer, sheet_name="Pie", index=False)
+
+        infographics = payload.get("infographics") or {}
+        if isinstance(infographics, dict) and infographics:
+            info_rows = []
+            for key, data in infographics.items():
+                row = {
+                    "metric": key,
+                    "value": (data or {}).get("value"),
+                    "unit": (data or {}).get("unit"),
+                    "description": (data or {}).get("description"),
+                }
+                info_rows.append(row)
+            pd.DataFrame(info_rows).to_excel(writer, sheet_name="Infographics", index=False)
+
+        series = payload.get("time_series") or []
+        if series:
+            pd.DataFrame(series).to_excel(writer, sheet_name="TimeSeries", index=False)
+
+    buffer.seek(0)
+    return buffer.getvalue()
