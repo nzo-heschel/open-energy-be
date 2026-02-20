@@ -289,8 +289,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ```json
 {
-  "start_date": "2025-01-06",
-  "end_date": "2026-01-06",
+  "start_date": "2025-02-19",
+  "end_date": "2026-02-19",
   "filter": "year",
   "categories": [
     {
@@ -373,8 +373,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ```json
 {
-  "start_date": "2025-01-06",
-  "end_date": "2026-01-06",
+  "start_date": "2025-02-19",
+  "end_date": "2026-02-19",
   "filter": "year",
   "level1": {
     "Non-renewables": 66781294.08916675,
@@ -417,8 +417,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   "series_units": "MW averaged from 5-minute NOGA samples (summed per bucket).",
   "series": [
     {
-      "period": "2025-01",
-      "label": "Jan 2025",
+      "period": "2025-02",
+      "label": "Feb 2025",
       "non_renewables_mw": 4609401.98,
       "renewables_mw": 609303.35,
       "other_mw": 93979.92,
@@ -497,7 +497,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 {
   "daily_average": [
     {
-      "period": "2026-01-05",
+      "period": "2026-02-18",
       "price_with_constraints": 166.88145833333334,
       "price_without_constraints": 125.8285416666667,
       "net_demand": 9285.825833333332
@@ -505,7 +505,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   ],
   "monthly_average": [
     {
-      "period": "2026-01",
+      "period": "2026-02",
       "price_with_constraints": 159.22885416666665,
       "price_without_constraints": 121.94937500000007,
       "net_demand": 9126.247708333334
@@ -513,35 +513,35 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   ],
   "chart_without_constraints": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "price": 181.89
     }
   ],
   "chart_with_constraints": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "price": 181.89
     }
   ],
   "correlation_view": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "net_demand": 8905.19,
       "price": 181.89
     }
   ],
   "samples": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "price_with_constraints": 181.89,
       "price_without_constraints": 181.89,
       "net_demand": 8905.19,
-      "date": "05-01-2026"
+      "date": "18-02-2026"
     }
   ],
   "view": "day",
-  "start_date": "2026-01-05",
-  "end_date": "2026-01-06"
+  "start_date": "2026-02-18",
+  "end_date": "2026-02-19"
 }
 ```
 
@@ -562,12 +562,12 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ```json
 {
-  "start_date": "2026-01-05",
-  "end_date": "2026-01-06",
+  "start_date": "2026-02-18",
+  "end_date": "2026-02-19",
   "view": "day",
   "smp_series": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "smp": 181.89,
       "price_with_constraints": 181.89,
       "price_without_constraints": 181.89
@@ -575,13 +575,13 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   ],
   "net_demand_series": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "net_demand": 8905.19
     }
   ],
   "combined_series": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "smp": 181.89,
       "price_with_constraints": 181.89,
       "price_without_constraints": 181.89,
@@ -590,7 +590,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   ],
   "correlation": [
     {
-      "timestamp": "2026-01-05T00:00:00",
+      "timestamp": "2026-02-18T00:00:00",
       "price_with_constraints": 181.89,
       "price_without_constraints": 181.89,
       "net_demand": 8905.19
@@ -599,7 +599,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   "correlation_by_view": {
     "day": [
       {
-        "timestamp": "2026-01-05T00:00:00",
+        "timestamp": "2026-02-18T00:00:00",
         "price_with_constraints": 181.89,
         "price_without_constraints": 181.89,
         "net_demand": 8905.19
@@ -607,7 +607,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
     ],
     "month": [
       {
-        "period": "2026-01",
+        "period": "2026-02",
         "price_with_constraints": 159.22885416666665,
         "price_without_constraints": 121.94937500000007,
         "net_demand": 9126.247708333334
@@ -624,7 +624,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   },
   "daily_average": [
     {
-      "period": "2026-01-05",
+      "period": "2026-02-18",
       "avg_smp": 166.88145833333334,
       "price_with_constraints": 166.88145833333334,
       "price_without_constraints": 125.8285416666667,
@@ -633,7 +633,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   ],
   "daily_smp": [
     {
-      "date": "2026-01-05",
+      "date": "2026-02-18",
       "daily_smp_avg": 166.88145833333334,
       "daily_smp_avg_with_constraints": 166.88145833333334,
       "daily_smp_avg_without_constraints": 125.8285416666667
@@ -641,7 +641,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   ],
   "monthly_average": [
     {
-      "period": "2026-01",
+      "period": "2026-02",
       "avg_smp": 159.22885416666665,
       "price_with_constraints": 159.22885416666665,
       "price_without_constraints": 121.94937500000007,
@@ -677,8 +677,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ```json
 {
-  "start_date": "2026-01-01",
-  "end_date": "2026-01-01",
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-01",
   "unit": "count",
   "labels": {
     "month": "Month",
@@ -687,7 +687,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   },
   "data": [
     {
-      "month": "2026-01",
+      "month": "2026-02",
       "total_consumers": 316929.0,
       "new_additions": 316929.0
     }
@@ -695,7 +695,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   "segments": {
     "regulation_type": [
       {
-        "month": "2026-01",
+        "month": "2026-02",
         "regulation_type": "competitive_supply",
         "total_consumers": 106501.0,
         "new_additions": 106501.0
@@ -703,7 +703,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
     ],
     "sector": [
       {
-        "month": "2026-01",
+        "month": "2026-02",
         "sector": "non_residential",
         "total_consumers": 25383.0,
         "new_additions": 25383.0
@@ -711,7 +711,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
     ],
     "meter_type": [
       {
-        "month": "2026-01",
+        "month": "2026-02",
         "meter_type": "basic",
         "total_consumers": 89519.0,
         "new_additions": 89519.0
@@ -866,7 +866,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ---
 
-### 7. CO2 Emissions (Delivery 3) Endpoints
+### CO2 Emissions (Delivery 3) Endpoints
 
 #### `GET /api/v1/co2/emissions-savings`
 
@@ -883,8 +883,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 {
   "total": 2505223.89,
   "unit": "tons CO2",
-  "start_date": "2026-01-03",
-  "end_date": "2026-02-02"
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-18"
 }
 ```
 
@@ -905,8 +905,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 {
   "total": 261.1633,
   "unit": "tons CO2/MWh",
-  "start_date": "2026-01-03",
-  "end_date": "2026-02-02"
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-18"
 }
 ```
 
@@ -927,8 +927,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 {
   "total": 7036671.71,
   "unit": "MWh",
-  "start_date": "2026-01-03",
-  "end_date": "2026-02-02"
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-18"
 }
 ```
 
@@ -949,8 +949,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 ```json
 {
   "view": "month",
-  "start_date": "2026-01-03",
-  "end_date": "2026-02-02",
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-18",
   "total_emissions": 2505223.89,
   "total_emissions_unit": "tons CO2",
   "emissions_per_kwh": 0.000356,
@@ -987,8 +987,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   },
   "time_series": [
     {
-      "period": "2026-01-03",
-      "label": "03 Jan",
+      "period": "2026-02-01",
+      "label": "01 Feb",
       "coal": 12431.86,
       "natural_gas": 64471.12,
       "diesel": 39.73,
@@ -1003,6 +1003,22 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ---
 
+
+---
+
+#### `GET /api/v1/co2/emissions-mix/export`
+
+**Description:** Export CO2 emissions mix to Excel
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, day | month | year)
+
+**Response:** Streamed Excel file (`co2_emissions_mix_STARTDATE_to_ENDDATE.xlsx`)
+
+---
 #### `GET /api/v1/co2/emissions-over-time`
 
 **Description:** CO2 emissions over time (chart + infographics)
@@ -1018,8 +1034,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 ```json
 {
   "view": "month",
-  "start_date": "2026-01-03",
-  "end_date": "2026-02-02",
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-18",
   "infographics": {
     "total_emissions_excluding_renewables": {
       "value": 2505223.89,
@@ -1034,8 +1050,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   },
   "chart_data": [
     {
-      "period": "2026-01-03",
-      "label": "03 Jan",
+      "period": "2026-02-01",
+      "label": "01 Feb",
       "coal": 12431.86,
       "natural_gas": 64471.12,
       "diesel": 39.73,
@@ -1049,6 +1065,22 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ---
 
+
+---
+
+#### `GET /api/v1/co2/emissions-over-time/export`
+
+**Description:** Export CO2 emissions over time to Excel
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, month | year | custom)
+
+**Response:** Streamed Excel file (`co2_emissions_over_time_STARTDATE_to_ENDDATE.xlsx`)
+
+---
 #### `GET /api/v1/co2/total-vs-ratio`
 
 **Description:** Total CO2 emissions vs CO2 emissions ratio (combined chart + infographics)
@@ -1064,8 +1096,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 ```json
 {
   "view": "month",
-  "start_date": "2026-01-03",
-  "end_date": "2026-02-02",
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-18",
   "infographics": {
     "total_emissions_excluding_renewables": {
       "value": 2505223.89,
@@ -1080,8 +1112,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
   },
   "chart_data": [
     {
-      "period": "2026-01-03",
-      "label": "03 Jan",
+      "period": "2026-02-01",
+      "label": "01 Feb",
       "total_emissions": 76942.7,
       "emissions_ratio": 8.4958,
       "coal": 12431.86,
@@ -1171,8 +1203,8 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
       "200"
     ],
     "sample_response_body": {
-      "start_date": "2025-01-06",
-      "end_date": "2026-01-06",
+      "start_date": "2025-02-19",
+      "end_date": "2026-02-19",
       "filter": "year",
       "categories": [
         {
