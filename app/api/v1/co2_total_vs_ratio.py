@@ -3,9 +3,12 @@ import os
 from typing import Dict, List, Optional
 from datetime import datetime
 from enum import Enum
+from io import StringIO
+import csv
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.services.co2_emission_savings_service_ import NogaCO2Service
 from app.services.co2_emission_savings_processor import CO2Processor
@@ -120,6 +123,45 @@ async def get_total_vs_ratio(
         raise
     except Exception as e:
         raise HTTPException(status_code=424, detail=f"Failed to compute Total vs Ratio: {str(e)}")
+
+
+@router.get("/total-vs-ratio/export-csv")
+async def export_total_vs_ratio_csv(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    view: ViewFilter = Query(default=ViewFilter.MONTH, description="Filter: month, year, or custom range"),
+):
+    """
+    Export Total vs Ratio payload to CSV.
+    """
+    payload = await get_total_vs_ratio(start_date=start_date, end_date=end_date, view=view)
+    chart_data = payload.get("chart_data", [])
+
+    output = StringIO()
+    fieldnames = [
+        "period",
+        "label",
+        "total_emissions",
+        "emissions_ratio",
+        "coal",
+        "natural_gas",
+        "diesel",
+        "generation_mwh",
+        "emissions_per_kwh",
+        "unit_emissions",
+        "unit_ratio",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in chart_data:
+        writer.writerow({k: row.get(k) for k in fieldnames})
+
+    filename = f"co2_total_vs_ratio_{payload['start_date']}_to_{payload['end_date']}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 def _build_combined_time_series(raw: List[Dict], granularity: str) -> List[Dict]:
