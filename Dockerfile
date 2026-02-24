@@ -7,6 +7,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 COPY app ./app
+COPY data_files ./data_files
 RUN useradd --system --uid 1000 fastapi \
     && chown -R fastapi:fastapi /app
 USER fastapi
