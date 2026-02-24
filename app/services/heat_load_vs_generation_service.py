@@ -81,11 +81,17 @@ class HeatLoadVsGenerationService:
         root = HeatLoadVsGenerationService._project_root()
         candidates = sorted(root.glob("data_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
         if not candidates:
+            candidates = sorted(
+                (root / "data_files").glob("data_*.csv"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        if not candidates:
             raise HTTPException(
                 status_code=428,
                 detail=(
                     "Heat load source CSV is missing. Add a file named like 'data_*.csv' "
-                    "to the project root or configure HEAT_LOAD_CSV_PATH."
+                    "to the project root (or data_files) or configure HEAT_LOAD_CSV_PATH."
                 ),
             )
         return candidates[0]
