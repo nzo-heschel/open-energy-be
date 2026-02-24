@@ -79,6 +79,7 @@ app/
       co2_emissions_ratio.py
       co2_total_production.py
       co2_total_vs_ratio.py
+      heat_load_vs_generation.py
       api_catalog.py
       data_files.py
       energy.py
@@ -100,6 +101,7 @@ app/
     demand_service.py
     co2_emission_savings_processor.py
     co2_emission_savings_service_.py
+    heat_load_vs_generation_service.py
     energy_mix_processor.py
     energy_mix_service.py
     energy_overview_service.py
@@ -1130,7 +1132,69 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ---
 
-### 8. Data Files Endpoints
+#### `GET /api/v1/co2/total-vs-ratio/export-csv`
+
+**Description:** Export total CO2 emissions vs CO2 emissions ratio to CSV
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, month | year | custom)
+
+**Response:** Streamed CSV file (`co2_total_vs_ratio_STARTDATE_to_ENDDATE.csv`)
+
+---
+
+#### `GET /api/v1/heat-load-vs-generation`
+
+**Description:** Heat load vs electricity generation based on meteorological CSV data and generation data
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, month | year | custom)
+
+**Response (200 OK):**
+
+```json
+{
+  "view": "year",
+  "start_date": "2026-02-01",
+  "end_date": "2026-02-18",
+  "units": {
+    "heat_load": "THI",
+    "electricity_generation": "MW"
+  },
+  "series": [
+    {
+      "period": "2026-02-16/2026-02-22",
+      "label": "16 Feb",
+      "heat_load": 11.96,
+      "electricity_generation_mw": 8620.43
+    }
+  ]
+}
+```
+
+---
+
+#### `GET /api/v1/heat-load-vs-generation/export`
+
+**Description:** Export heat load vs electricity generation to Excel
+
+**Query Parameters:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `view` (optional, month | year | custom)
+
+**Response:** Streamed Excel file (`heat_load_vs_generation_STARTDATE_to_ENDDATE.xlsx`)
+
+---
+
+### 9. Data Files Endpoints
 
 #### `GET /api/v1/data-files/status`
 
@@ -1179,7 +1243,7 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 ---
 
 
-### 9. API Catalog Endpoint
+### 10. API Catalog Endpoint
 
 
 #### `GET /api/v1/apis/`

@@ -25,6 +25,7 @@ from app.api.v1 import co2_total_production
 from app.api.v1 import co2_emissions_mix
 from app.api.v1 import co2_emissions_over_time
 from app.api.v1 import co2_total_vs_ratio
+from app.api.v1 import heat_load_vs_generation
 
 
 # from app.config import configure_global_proxy
@@ -102,6 +103,7 @@ app.include_router(co2_total_production.router, prefix="/api/v1")
 app.include_router(co2_emissions_mix.router, prefix="/api/v1")
 app.include_router(co2_emissions_over_time.router, prefix="/api/v1")
 app.include_router(co2_total_vs_ratio.router, prefix="/api/v1")
+app.include_router(heat_load_vs_generation.router, prefix="/api/v1")
 
 
 
