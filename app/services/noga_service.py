@@ -137,7 +137,9 @@ class NogaService:
     @staticmethod
     def aggregate_energy(values: List[Dict]) -> Dict:
         """
-        Aggregate energy values into Non-renewables, Renewables, Other for chart display
+        Aggregate energy values into Non-renewables, Renewables, Other for chart display.
+        diesel (Soler) and fuel_oil (Mazout) are tracked separately.
+        batteries and pumped_storage are distinct standalone fields under Other.
         """
         agg = {
             "Non-renewables": 0,
@@ -149,8 +151,8 @@ class NogaService:
             agg["Non-renewables"] += sum([
                 v.get("coal", 0),
                 v.get("natural_Gas", 0),
-                v.get("mazut", 0),  # diesel
-                v.get("diesel", 0),
+                v.get("mazut", 0),       # fuel_oil
+                v.get("diesel", 0),      # diesel
                 v.get("Diesel", 0),
             ])
             agg["Renewables"] += sum([
@@ -161,13 +163,14 @@ class NogaService:
                 v.get("photovoltaicIntegrated", 0),
                 v.get("pv_storage", 0),
                 v.get("photovoltaic_storage", 0),
-                v.get("storage", 0),
-                v.get("batteries", 0),
-                v.get("pumpedStorageBattery", 0),
+                # "storage" field dropped per client request
+                # "batteries" moved to Other
             ])
             agg["Other"] += sum([
                 v.get("other", 0),
-                v.get("pumpedStorage", 0)
+                v.get("batteries", 0),
+                v.get("pumpedStorage", 0),
+                v.get("pumpedStorageBattery", 0),
             ])
 
         return agg

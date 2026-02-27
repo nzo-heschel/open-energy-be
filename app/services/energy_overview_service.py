@@ -53,18 +53,20 @@ class EnergyOverviewService:
             "non_renewables": {
                 "coal": 0,
                 "natural_gas": 0,
-                "diesel": 0
+                "diesel": 0,
+                "fuel_oil": 0,
             },
             "renewables": {
                 "photovoltaic": 0,
                 "biogas": 0,
                 "wind": 0,
                 "solar": 0,
-                "pv_storage": 0
+                "pv_storage": 0,
             },
             "other": {
                 "other": 0,
-                "pumped_storage": 0
+                "batteries": 0,
+                "pumped_storage": 0,
             }
         }
 
@@ -72,12 +74,13 @@ class EnergyOverviewService:
             return sum(entry.get(k, 0) for k in keys)
 
         for h in hourly:
-            # Fossil
+            # Fossil — diesel (Soler/דיזל) and fuel_oil (Mazout/מזוט) are separate
             level2["non_renewables"]["coal"] += sum_keys(h, ["coal"])
             level2["non_renewables"]["natural_gas"] += sum_keys(h, ["natural_Gas", "natural_gas"])
-            level2["non_renewables"]["diesel"] += sum_keys(h, ["mazut", "diesel", "Diesel"])
+            level2["non_renewables"]["diesel"] += sum_keys(h, ["diesel", "Diesel"])
+            level2["non_renewables"]["fuel_oil"] += sum_keys(h, ["mazut"])
 
-            # Renewable
+            # Renewable — "storage" field dropped per client; batteries moved to Other
             level2["renewables"]["photovoltaic"] += sum_keys(
                 h, ["photoVoltaic", "photovoltaic", "photo_voltaic"]
             )
@@ -90,15 +93,13 @@ class EnergyOverviewService:
                     "photovoltaicIntegrated",
                     "pv_storage",
                     "photovoltaic_storage",
-                    "storage",
-                    "batteries",
-                    "pumpedStorageBattery",
                 ],
             )
 
-            # Other
+            # Other — batteries and pumped_storage are distinct standalone fields
             level2["other"]["other"] += sum_keys(h, ["other"])
-            level2["other"]["pumped_storage"] += sum_keys(h, ["pumpedStorage", "pumped_storage"])
+            level2["other"]["batteries"] += sum_keys(h, ["batteries"])
+            level2["other"]["pumped_storage"] += sum_keys(h, ["pumpedStorage", "pumped_storage", "pumpedStorageBattery"])
 
         # Level-1 sums
         level1["non_renewables"] = sum(level2["non_renewables"].values())
@@ -172,7 +173,7 @@ class EnergyOverviewService:
         # Tooltip from Delivery-1 specification
         result["tooltip"] = (
             "The chart shows Israel's electricity generation mix and illustrates the "
-            "different energy sources: non-renewables (coal, natural gas, diesel) and "
+            "different energy sources: non-renewables (coal, natural gas, diesel, fuel oil) and "
             "renewables (PV, biogas, wind, solar). Data updated hourly from NOGA."
         )
 
@@ -215,4 +216,4 @@ class EnergyOverviewService:
             df_level2.to_excel(writer, sheet_name="Detailed", index=False)
 
         buffer.seek(0)
-        return buffer.getvalue()    
+        return buffer.getvalue()
