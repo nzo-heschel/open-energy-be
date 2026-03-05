@@ -181,6 +181,13 @@ class PrivateSuppliersService:
             "סיבות לסטטוס",
             "פירוט סיבת סטטוס",
         ]
+        district_candidates = [
+            "district",
+            "district name",
+            "שם מחוז",
+            "מחוז",
+        ]
+
 
         year_month_col = PrivateSuppliersService._resolve_column(df, year_month_candidates, required=False)
         total_col = PrivateSuppliersService._resolve_column(df, total_candidates, required=False)
@@ -189,6 +196,8 @@ class PrivateSuppliersService:
         regulation_col = PrivateSuppliersService._resolve_column(df, regulation_candidates, required=False)
         status_col = PrivateSuppliersService._resolve_column(df, status_candidates, required=False)
         rejection_col = PrivateSuppliersService._resolve_column(df, rejection_candidates, required=False)
+        district_col = PrivateSuppliersService._resolve_column(df, district_candidates, required=False)
+
 
         rename_map: Dict[str, str] = {}
         if year_month_col:
@@ -205,6 +214,9 @@ class PrivateSuppliersService:
             rename_map[status_col] = "status"
         if rejection_col:
             rename_map[rejection_col] = "rejection_reason"
+        if district_col:
+            rename_map[district_col] = "district"
+
         df = df.rename(columns=rename_map)
 
         derived_month = False
@@ -316,6 +328,8 @@ class PrivateSuppliersService:
             "regulation_type": "regulation_type",
             "sector": "sector",
             "meter_type": "meter_type",
+            "district": "district",
+
             "status": "status",
             "rejection_reason": "rejection_reason",
         }
@@ -349,7 +363,7 @@ class PrivateSuppliersService:
         # Backward compatibility: if legacy "location" was present, expose as regulation_type.
         if "location" in segments and "regulation_type" not in segments:
             segments["regulation_type"] = segments.pop("location")
-        for expected in ("regulation_type", "sector", "meter_type"):
+        for expected in ("regulation_type", "sector", "meter_type", "district"):
             segments.setdefault(expected, [])
         return segments
 
