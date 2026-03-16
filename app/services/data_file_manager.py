@@ -22,6 +22,10 @@ DATASET_BASE_NAMES = {
     DataFileSource.PRIVATE_SUPPLIERS.value: "Files_Netunei_hashmal_mp_tzarchan",
     # Switching requests now uses the _niyud source file.
     DataFileSource.SWITCHING_REQUESTS.value: "Files_Netunei_hashmal_mp_niyud",
+    # Delivery 2 – Connected renewable energy facilities.
+    DataFileSource.CONNECTED_FACILITIES.value: "Files_Netunei_hashmal_my_mehubarim",
+    # Delivery 2 – Distributor responses (connection request approvals).
+    DataFileSource.DISTRIBUTOR_RESPONSES.value: "Files_Netunei_hashmal_my_teshuvotmehalek",
 }
 
 
