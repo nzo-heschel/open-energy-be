@@ -6,8 +6,6 @@ A comprehensive backend web service that collects, processes, and exposes Israel
 
 The service is designed for dashboards, analytics platforms, energy market analysis tools, and other applications requiring reliable access to Israel's energy data.
 
----
-
 ## 📋 Table of Contents
 
 - [What This Project Does](#what-this-project-does)
@@ -17,8 +15,10 @@ The service is designed for dashboards, analytics platforms, energy market analy
 - [Getting Started](#getting-started)
 - [Configuration](#configuration)
 - [API Documentation](#api-documentation)
-- [Complete Endpoint Reference](#complete-endpoint-reference)
 - [Architecture](#architecture)
+- [Delivery 1 — Core Energy & Market Endpoints](#delivery-1---core-energy--market-endpoints)
+- [Delivery 2 — Renewable Infrastructure & Response Capacity](#delivery-2---renewable-infrastructure--response-capacity)
+- [Delivery 3 — CO2 Emissions Endpoints](#delivery-3---co2-emissions-endpoints)
 - [Development & Extension](#development--extension)
 - [Troubleshooting](#troubleshooting)
 
@@ -90,6 +90,8 @@ app/
       renewable_mix.py
       renewable_potential_industry.py
       renewable_transition.py
+      response_capacity.py
+      installed_capacity.py
       smp.py
       smp_production_vs_marginal_price.py
       switching_requests.py
@@ -98,6 +100,8 @@ app/
   security.py
   services/
     data_file_manager.py
+    connected_facilities_service.py
+    distributor_responses_service.py
     demand_service.py
     co2_emission_savings_processor.py
     co2_emission_savings_service_.py
@@ -125,6 +129,11 @@ data_extractor.py
 data_files/
   Files_Netunei_hashmal_mp_niyud_05-12-2025.csv
   Files_Netunei_hashmal_mp_tzarchan_05-12-2025.csv
+  Files_Netunei_hashmal_my_mehubarim.csv
+  Files_Netunei_hashmal_my_teshuvotmehalek.csv
+Delivery 2 Sources/
+  Files_Netunei_hashmal_my_mehubarim.csv
+  Files_Netunei_hashmal_my_teshuvotmehalek.csv
 docker-compose.yml
 Dockerfile
 README.md
@@ -265,14 +274,20 @@ Once running, access interactive documentation at:
 2. **Route Handler** — API endpoint receives and validates parameters
 3. **Service Fetch** — Service queries NOGA or loads local data
 4. **Transform** — Raw data converted to common format (5-min → hourly)
-5. **Aggregate** — Data grouped into categories and levels
-6. **Calculate** — Compute metrics (totals, percentages, trends)
-7. **Format** — Structure response as JSON or Excel
-8. **Return** — Send response to client
+ 5. **Aggregate** — Data grouped into categories and levels
+ 6. **Calculate** — Compute metrics (totals, percentages, trends)
+ 7. **Format** — Structure response as JSON or Excel
+ 8. **Return** — Send response to client
+ 9. **Delivery 2 CSV Ingestion** — Recharge the connected-facilities and distributor-responses snapshots that power the renewable infrastructure endpoints via `data_file_manager`.
+10. **Delivery 2 Aggregation & Export** — `connected_facilities_service` and `distributor_responses_service` build the series/exports that mirror the PRD tables.
+
+
 
 ---
 
-## Complete Endpoint Reference
+## Delivery 1 — Core Energy & Market Endpoints
+
+This section documents the Delivery 1 APIs that power the core generation mix, market pricing, SMP, private supplier, and switching-request insights.
 
 All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible ranges (usually last 365 days or last 1 day).
 
@@ -867,6 +882,329 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 **Response:** Streamed Excel file (`switching_requests_YYYY.xlsx`)
 
 ---
+
+## Delivery 2 — Renewable Infrastructure & Response Capacity
+
+Implemented: 9 | Skipped: 3 (client decisions) | Blocked: 2 (missing upstream data).
+
+#### Endpoints 1–3: Renewable Energy Mix & Transition (NOGA API)
+
+These routes call the NOGA API, divide each 5-minute sample by 12 to convert into hourly equivalents, then aggregate into daily/monthly series.
+
+##### GET /api/v1/renewables/production-mix
+
+**Description:** Returns the renewable portion of the production mix with breakdowns for solar, wind, and other sources.
+
+**Query Parameters:**
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+- `category` (optional, `solar`, `wind`, `other`)
+
+**Response (200 OK):**
+```json
+{
+  "start_date": "2026-01-01",
+  "end_date": "2026-01-31",
+  "view": "month",
+  "total_renewable_mw": 124500.4,
+  "breakdown": [
+    {
+      "type": "photovoltaic",
+      "value": 101750.2,
+      "share_percent": 81.8
+    },
+    {
+      "type": "wind",
+      "value": 15000.6,
+      "share_percent": 12.1
+    },
+    {
+      "type": "other",
+      "value": 8000.4,
+      "share_percent": 6.1
+    }
+  ],
+  "series": [
+    {
+      "period": "2026-01-01",
+      "solar_mw": 4200.5,
+      "wind_mw": 520.0,
+      "other_mw": 230.1
+    }
+  ]
+}
+```
+
+**Export:** `GET /api/v1/renewables/production-mix/export` returns an Excel workbook with summary and detailed sheets.
+
+##### GET /api/v1/renewables/transition
+
+**Description:** Shows the national transition to renewables month by month.
+
+**Query Parameters:**
+- `year` (optional, 4-digit year; defaults to the current year)
+
+**Response (200 OK):**
+```json
+{
+  "year": "2025",
+  "renewable_share_percent": 16.2,
+  "monthly_totals": [
+    {
+      "month": "2025-01",
+      "renewable_mw": 4880.0,
+      "total_mw": 28500.0,
+      "renewable_share_percent": 17.1
+    }
+  ],
+  "notes": "Share is calculated with 5-minute samples divided by 12 and grouped by month."
+}
+```
+
+**Export:** `GET /api/v1/renewables/transition/export`
+
+##### GET /api/v1/renewables/potential-by-industry
+
+**Description:** Estimates renewable production potential per industry vertical.
+
+**Query Parameters:**
+- `year` (optional, 4-digit year; defaults to the current year)
+
+**Response (200 OK):**
+```json
+{
+  "year": "2025",
+  "total_potential_mw": 3865.3,
+  "industry_breakdown": [
+    {
+      "industry_type": "industrial",
+      "renewable_potential_mw": 1670.2,
+      "solar_share_percent": 48.6
+    }
+  ],
+  "notes": "Industry names follow the Electricity Authority classification."
+}
+```
+
+**Export:** `GET /api/v1/renewables/potential-by-industry/export`
+
+#### Endpoints 9–11: Installed Capacity (Connected Facilities CSV)
+
+These endpoints ingest `Files_Netunei_hashmal_my_mehubarim.csv` (63,687 records, cp1255 encoding) that is kept under `data_files/` and mirrored in `Delivery 2 Sources/` for safekeeping. `connected_facilities_service.py` reads the file via `data_file_manager`, applies the `DataFileSource.CONNECTED_FACILITIES` enum, and feeds the three APIs below. Filters include `year`, `district`, and `technology`.
+
+##### GET /api/v1/renewables/installed-capacity/cumulative
+
+**Description:** Returns the cumulative installed capacity time series with technology and district breakdowns.
+
+**Query Parameters:**
+- `year` (optional, int)
+- `district` (optional, Jerusalem|North|South|Haifa|Center|Tel Aviv|Judea & Samaria|Other)
+- `technology` (optional, Photovoltaic|Wind|Solar Thermal|Other)
+
+**Response (200 OK):**
+```json
+{
+  "title": "Installed Capacity (Cumulative) of Renewable Energy Facilities",
+  "total_installed_mw": 7756.107,
+  "total_facilities": 63687,
+  "series": [
+    {
+      "period": "2012-01",
+      "added_mw": 0.123,
+      "cumulative_mw": 0.123
+    }
+  ],
+  "technology_breakdown": {
+    "Photovoltaic": 7200.0,
+    "Wind": 300.0,
+    "Solar Thermal": 150.0,
+    "Other": 106.107
+  },
+  "district_breakdown": {
+    "South": 3000.0,
+    "North": 1500.0
+  }
+}
+```
+
+**Export:** `GET /api/v1/renewables/installed-capacity/cumulative/export`
+
+##### GET /api/v1/renewables/installed-capacity/growth
+
+**Description:** Reports yearly additions plus percentage growth on the cumulative series.
+
+**Query Parameters:**
+- `district` (optional)
+- `technology` (optional)
+
+**Response (200 OK):**
+```json
+{
+  "title": "Installed Capacity — Growth Rate",
+  "series": [
+    {
+      "year": 2024,
+      "added_mw": 420.0,
+      "cumulative_mw": 7200.0,
+      "growth_rate_percent": 6.2
+    }
+  ],
+  "filters_applied": {
+    "district": null,
+    "technology": "Photovoltaic"
+  }
+}
+```
+
+**Export:** `GET /api/v1/renewables/installed-capacity/growth/export`
+
+##### GET /api/v1/renewables/installed-capacity/by-facility-size
+
+**Description:** Breaks the cumulative series by seven facility size brackets.
+
+**Query Parameters:**
+- `year` (optional, int)
+- `district` (optional)
+
+**Size Brackets:** Up to 16 kW, 16–50 kW, 50–200 kW, 200 kW–1 MW, 1–5 MW, 5–50 MW, 50+ MW.
+
+**Response (200 OK):**
+```json
+{
+  "series": [
+    {
+      "year": 2024,
+      "size_brackets": {
+        "Up to 16 kW": 1500.0,
+        "16–50 kW": 950.0,
+        "50–200 kW": 380.0,
+        "200 kW–1 MW": 270.0,
+        "1–5 MW": 310.0,
+        "5–50 MW": 240.0,
+        "50+ MW": 180.0
+      }
+    }
+  ],
+  "total_mw": 3830.0
+}
+```
+
+**Export:** `GET /api/v1/renewables/installed-capacity/by-facility-size/export`
+
+#### Endpoints 12–14: Response Capacity (Distributor Responses CSV)
+
+These endpoints process `Files_Netunei_hashmal_my_teshuvotmehalek.csv` (76,876 records, cp1255 encoding). `distributor_responses_service.py` and `data_file_manager.py` treat cancellations, response types, districts, and technologies to build the requested metrics.
+
+##### GET /api/v1/renewables/response-capacity/by-period
+
+**Description:** Aggregated response capacity per time period with breakdowns by response type.
+
+**Query Parameters:**
+- `year` (optional, int)
+- `district` (optional)
+- `technology` (optional, Photovoltaic|Wind|Other)
+- `response_type` (optional, Positive|Partial Positive|Limited Positive|Negative)
+- `include_cancelled` (optional, bool)
+
+**Response (200 OK):**
+```json
+{
+  "title": "Response Capacity Divided by Period",
+  "total_mw": 18214.205,
+  "series": [
+    {
+      "period": "2023-12",
+      "total_mw": 320.5,
+      "request_count": 820,
+      "response_type_breakdown": {
+        "Positive": 238.5,
+        "Negative": 40.0,
+        "Partial Positive": 30.0,
+        "Limited Positive": 12.0
+      }
+    }
+  ],
+  "response_type_breakdown": {
+    "Positive": 15000.0,
+    "Negative": 1500.0,
+    "Partial Positive": 1000.0,
+    "Limited Positive": 714.0
+  }
+}
+```
+
+**Export:** `GET /api/v1/renewables/response-capacity/by-period/export`
+
+##### GET /api/v1/renewables/response-capacity/by-size
+
+**Description:** Shows response MW split by the same seven size brackets plus yearly totals.
+
+**Query Parameters:**
+- `year` (optional)
+- `district` (optional)
+- `include_cancelled` (optional, bool)
+
+**Response (200 OK):**
+```json
+{
+  "title": "Response Capacity by Facility Size",
+  "series": [
+    {
+      "year": 2024,
+      "size_bracket": "1–5 MW",
+      "total_mw": 1240.0,
+      "request_count": 220
+    }
+  ],
+  "size_brackets": [
+    "Up to 16 kW",
+    "16–50 kW",
+    "50–200 kW",
+    "200 kW–1 MW",
+    "1–5 MW",
+    "5–50 MW",
+    "50+ MW"
+  ]
+}
+```
+
+**Export:** `GET /api/v1/renewables/response-capacity/by-size/export`
+
+##### GET /api/v1/renewables/response-capacity/by-district
+
+**Description:** Aggregates response capacity per district with a technology breakdown.
+
+**Query Parameters:**
+- `year` (optional)
+- `technology` (optional)
+- `include_cancelled` (optional, bool)
+
+**Response (200 OK):**
+```json
+{
+  "title": "Response Capacity Divided by District",
+  "series": [
+    {
+      "district": "South",
+      "total_mw": 7200.0,
+      "request_count": 2100,
+      "technology_breakdown": {
+        "Photovoltaic": 6800.0,
+        "Wind": 400.0
+      }
+    }
+  ],
+  "district_technology_breakdown": {
+    "South": {
+      "Photovoltaic": 6800.0,
+      "Wind": 400.0
+    }
+  }
+}
+```
+
+**Export:** `GET /api/v1/renewables/response-capacity/by-district/export`
+
 
 ### CO2 Emissions (Delivery 3) Endpoints
 
