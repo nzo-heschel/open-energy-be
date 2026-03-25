@@ -88,16 +88,23 @@ async def export_response_capacity_by_period(
 async def get_response_capacity_by_size(
     year: int | None = None,
     district: str | None = None,
+    response_type: str | None = "Positive",
     include_cancelled: bool = False,
 ):
     """
     Delivery 2 – Row 20: Response capacity divided by facility size (kilowatt).
     הספק תשובת מחולק לפי גודל מתקן (קילוואט)
+
+    NOTE: Defaults to Positive responses only (client requirement for Diagram 5.2).
+    Pass response_type=all to get all response types.
     """
     try:
+        # Allow overriding to "all" to fetch every response type
+        rt = None if response_type and response_type.lower() == "all" else response_type
         return DistributorResponsesService.get_response_capacity_by_size(
             year=year,
             district=district,
+            response_type=rt,
             include_cancelled=include_cancelled,
         )
     except HTTPException:
@@ -113,13 +120,16 @@ async def get_response_capacity_by_size(
 async def export_response_capacity_by_size(
     year: int | None = None,
     district: str | None = None,
+    response_type: str | None = "Positive",
     include_cancelled: bool = False,
 ):
     """Export response capacity by facility size to Excel."""
     try:
+        rt = None if response_type and response_type.lower() == "all" else response_type
         payload = DistributorResponsesService.get_response_capacity_by_size(
             year=year,
             district=district,
+            response_type=rt,
             include_cancelled=include_cancelled,
         )
         contents = DistributorResponsesService.to_excel(payload)

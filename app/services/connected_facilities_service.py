@@ -77,22 +77,29 @@ _MUNICIPAL_STATUS_MAP = {
 }
 
 # Capacity size brackets (MW) used for endpoint 11
+# Ranges are non-overlapping: boundary values fall into the HIGHER bracket.
 _SIZE_BRACKETS_MW = [
-    (0, 0.016, "Up to 16 kW"),
-    (0.016, 0.050, "16–50 kW"),
-    (0.050, 0.200, "50–200 kW"),
-    (0.200, 1.0, "200 kW–1 MW"),
-    (1.0, 5.0, "1–5 MW"),
-    (5.0, 50.0, "5–50 MW"),
-    (50.0, float("inf"), "50+ MW"),
+    (0,     0.016,         "Up to 16 kW"),
+    (0.016, 0.050,         "17–50 kW"),
+    (0.050, 0.200,         "51–200 kW"),
+    (0.200, 1.0,           "201 kW–1 MW"),
+    (1.0,   5.0,           "1–5 MW"),
+    (5.0,   50.0,          "5–50 MW"),
+    (50.0,  float("inf"),  "50+ MW"),
 ]
 
 
 def _assign_size_bracket(capacity_mw: float) -> str:
-    """Assign a human-readable size category based on capacity in MW."""
-    for low, high, label in _SIZE_BRACKETS_MW:
-        if low <= capacity_mw < high:
-            return label
+    """Assign a human-readable size category based on capacity in MW.
+    Lower bound is exclusive, upper bound is inclusive (except the first bracket).
+    """
+    for i, (low, high, label) in enumerate(_SIZE_BRACKETS_MW):
+        if i == 0:
+            if 0 <= capacity_mw <= low + (high - low) - 0.000001:
+                return label
+        else:
+            if low < capacity_mw <= high:
+                return label
     return "Unknown"
 
 
