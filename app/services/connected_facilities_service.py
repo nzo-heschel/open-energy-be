@@ -19,6 +19,7 @@ import pandas as pd
 from fastapi import HTTPException
 
 from app.services.data_file_manager import ensure_fresh_data_file
+from app.services.csv_downloader_service import ensure_fresh_or_download
 from app.utils.enums import DataFileSource
 
 # Hebrew → English column mapping
@@ -110,9 +111,7 @@ class ConnectedFacilitiesService:
 
     @staticmethod
     def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
-        csv_path = csv_path or ensure_fresh_data_file(
-            DataFileSource.CONNECTED_FACILITIES, allow_stale=True,
-        )
+        csv_path = csv_path or ensure_fresh_or_download(DataFileSource.CONNECTED_FACILITIES)
         df: Optional[pd.DataFrame] = None
         for enc in ("cp1255", "utf-8-sig", "latin1"):
             try:

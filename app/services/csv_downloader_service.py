@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # ── Source URLs (Israel Electricity Authority BI portal) ──────────────────
 SOURCE_URLS: Dict[str, str] = {
+    # Delivery 1 – Private supply world
     DataFileSource.PRIVATE_SUPPLIERS.value: (
         "https://www.gov.il/BlobFolder/generalpage/"
         "bi_olam_haspaka/he/Files_Netunei_hashmal_mp_tzarchan.csv"
@@ -36,6 +37,15 @@ SOURCE_URLS: Dict[str, str] = {
     DataFileSource.SWITCHING_REQUESTS.value: (
         "https://www.gov.il/BlobFolder/generalpage/"
         "bi_olam_haspaka/he/Files_Netunei_hashmal_mp_niyud.csv"
+    ),
+    # Delivery 2 – Renewable energy (connected facilities & distributor responses)
+    DataFileSource.CONNECTED_FACILITIES.value: (
+        "https://www.gov.il/BlobFolder/generalpage/"
+        "bipua2024/he/Files_Netunei_hashmal_my_mehubarim.csv"
+    ),
+    DataFileSource.DISTRIBUTOR_RESPONSES.value: (
+        "https://www.gov.il/BlobFolder/generalpage/"
+        "bipua2024/he/Files_Netunei_hashmal_my_teshuvotmehalek.csv"
     ),
 }
 
