@@ -1,0 +1,8 @@
+﻿region,solar_share_2025,renewable_target_2030,renewable_target_2050,note
+Germany,0.15,0.8,1.0,
+Spain,0.22,0.81,1.0,
+Italy,0.12,0.65,0.95,
+Greece,0.23,0.82,0.95,
+California,0.23,0.6,1.0,
+Texas,,0.5,1.0,
+_data_refresh_note,,,,Update yearly manually through Energy Charts (Europe & national data U.S)
