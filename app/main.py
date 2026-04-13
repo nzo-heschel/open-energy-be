@@ -29,6 +29,8 @@ from app.api.v1 import heat_load_vs_generation
 # Delivery 2 – Installed Capacity & Response Capacity
 from app.api.v1 import installed_capacity
 from app.api.v1 import response_capacity
+# Delivery 4 – Forecasts & comparisons
+from app.api.v1 import delivery4_forecasts
 
 
 # from app.config import configure_global_proxy
@@ -110,6 +112,19 @@ app.include_router(heat_load_vs_generation.router, prefix="/api/v1")
 # Delivery 2 – Connected Facilities & Distributor Responses
 app.include_router(installed_capacity.router, prefix="/api/v1")
 app.include_router(response_capacity.router, prefix="/api/v1")
+# Delivery 4 – Diagram 2. The delivery-4 renewables path is primary; the shorter
+# renewables path and old /forecasts path stay as compatibility aliases.
+app.include_router(delivery4_forecasts.router, prefix="/api/v1/renewables/delivery-4")
+app.include_router(
+    delivery4_forecasts.router,
+    prefix="/api/v1/renewables",
+    include_in_schema=False,
+)
+app.include_router(
+    delivery4_forecasts.router,
+    prefix="/api/v1/forecasts",
+    include_in_schema=False,
+)
 
 
 

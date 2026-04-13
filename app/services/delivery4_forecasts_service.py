@@ -1,7 +1,10 @@
 # app/services/delivery4_forecasts_service.py
 """
 Delivery 4 — Diagram 2 only (PRD: תחזיות והשוואות, diagram #2).
-Source: _Delivery 4 - NZO Open Energy website.xlsx — sheet "Delivery 4 Diagram 2".
+
+Source data: `data_files/Delivery_4_Diagram_2_International.csv` (not the combined workbook).
+
+Diagram 1 reference data (if used later): `data_files/Delivery_4_Diagram_1_Israel.csv`.
 """
 from __future__ import annotations
 
@@ -14,14 +17,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_DEFAULT_XLSX = _PROJECT_ROOT / "_Delivery 4 - NZO Open Energy website.xlsx"
+_DEFAULT_DIAGRAM2_CSV = _PROJECT_ROOT / "data_files" / "Delivery_4_Diagram_2_International.csv"
+
+# Documented for future diagram-1 endpoints or jobs; not read by this service today.
+DIAGRAM1_CSV = _PROJECT_ROOT / "data_files" / "Delivery_4_Diagram_1_Israel.csv"
 
 
-def _workbook_path() -> Path:
-    override = os.getenv("DELIVERY4_XLSX_PATH")
+def _diagram2_csv_path() -> Path:
+    override = os.getenv("DELIVERY4_DIAGRAM2_CSV_PATH")
     if override:
         return Path(override)
-    return _DEFAULT_XLSX
+    return _DEFAULT_DIAGRAM2_CSV
 
 
 def _slug_region(name: str) -> str:
@@ -29,39 +35,47 @@ def _slug_region(name: str) -> str:
     return s or "region"
 
 
-def _read_diagram2_sheet(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, str], Optional[str]]:
+def _read_diagram2_csv(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, str], Optional[str]]:
     """
-    Parse Diagram 2 sheet: data rows, column titles from row 1, optional footnote row.
+    Parse Diagram 2 CSV: region rows + optional `_data_refresh_note` row for footnote.
     """
-    df = pd.read_excel(path, sheet_name="Delivery 4 Diagram 2", header=None)
+    df = pd.read_csv(path, encoding="utf-8-sig")
+    df.columns = [str(c).strip() for c in df.columns]
 
     labels = {
-        "solar_share_2025": _cell_str(df, 1, 1) or "2025 Solar Share",
-        "renewable_target_2030": _cell_str(df, 1, 2) or "2030 renewable target",
-        "renewable_target_2050": _cell_str(df, 1, 3) or "2050 renewable target",
+        "solar_share_2025": "2025 Solar Share",
+        "renewable_target_2030": "2030 renewable target",
+        "renewable_target_2050": "2050 renewable target",
     }
 
     regions: List[Dict[str, Any]] = []
     footnote: Optional[str] = None
 
-    for r in range(2, len(df)):
-        name = df.iloc[r, 0]
-        c1 = df.iloc[r, 1]
-
+    for _, row in df.iterrows():
+        name = row.get("region")
         if pd.isna(name) or str(name).strip() == "":
-            if pd.notna(c1) and len(str(c1).strip()) > 30:
-                footnote = str(c1).strip()
             continue
 
         raw_name = str(name).strip()
+        if raw_name.startswith("_data_refresh_note") or raw_name == "_data_refresh_note":
+            note = row.get("note")
+            if pd.notna(note) and str(note).strip():
+                footnote = str(note).strip()
+            continue
+
         if _is_noise_row(raw_name):
             continue
 
-        solar = df.iloc[r, 1]
-        t2030 = df.iloc[r, 2]
-        t2050 = df.iloc[r, 3]
+        solar = row.get("solar_share_2025")
+        t2030 = row.get("renewable_target_2030")
+        t2050 = row.get("renewable_target_2050")
 
-        solar_val = float(solar) if pd.notna(solar) else None
+        solar_val: Optional[float]
+        if pd.isna(solar) or (isinstance(solar, str) and solar.strip() == ""):
+            solar_val = None
+        else:
+            solar_val = float(solar)
+
         rt30 = float(t2030) if pd.notna(t2030) else None
         rt50 = float(t2050) if pd.notna(t2050) else None
 
@@ -77,14 +91,6 @@ def _read_diagram2_sheet(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, st
         )
 
     return regions, labels, footnote
-
-
-def _cell_str(df: pd.DataFrame, row: int, col: int) -> Optional[str]:
-    v = df.iloc[row, col]
-    if pd.isna(v):
-        return None
-    s = str(v).strip()
-    return s if s else None
 
 
 def _is_noise_row(name: str) -> bool:
@@ -121,7 +127,7 @@ def _validation_notes(
 
 
 class Delivery4ForecastsService:
-    """Delivery 4 — Diagram 2 (international comparison) from the NZO workbook."""
+    """Delivery 4 — Diagram 2 (international comparison) from the NZO CSV snapshot."""
 
     @staticmethod
     def get_international_comparison(
@@ -131,26 +137,34 @@ class Delivery4ForecastsService:
         """
         Diagram #2 — horizontal bars: 2030 target (always), optional 2050 and 2025 solar share.
 
-        Values in the workbook are fractions (0–1), not percent points.
+        Values in the CSV are fractions (0–1), not percent points.
         """
-        path = _workbook_path()
+        path = _diagram2_csv_path()
         if not path.is_file():
-            raise FileNotFoundError(f"Delivery 4 workbook not found: {path}")
+            raise FileNotFoundError(
+                f"Delivery 4 Diagram 2 CSV not found: {path}. "
+                "Place data_files/Delivery_4_Diagram_2_International.csv or set DELIVERY4_DIAGRAM2_CSV_PATH."
+            )
 
-        regions_raw, column_labels_from_sheet, footnote = _read_diagram2_sheet(path)
-        missing_solar = [r["region"] for r in regions_raw if not r["solar_data_available"]]
-        validation = _validation_notes(regions_raw)
+        regions_raw, column_labels_from_sheet, footnote = _read_diagram2_csv(path)
+        missing_solar = (
+            [r["region"] for r in regions_raw if not r["solar_data_available"]]
+            if include_solar_share
+            else []
+        )
+        validation = _validation_notes(regions_raw) if include_solar_share else []
 
-        # Strip internal flags from each region in the response; keep clean chart fields.
         regions: List[Dict[str, Any]] = []
         for r in regions_raw:
             entry: Dict[str, Any] = {
                 "region": r["region"],
                 "region_key": r["region_key"],
-                "solar_share_2025": r["solar_share_2025"],
                 "renewable_target_2030": r["renewable_target_2030"],
-                "renewable_target_2050": r["renewable_target_2050"],
             }
+            if include_solar_share:
+                entry["solar_share_2025"] = r["solar_share_2025"]
+            if include_2050_targets:
+                entry["renewable_target_2050"] = r["renewable_target_2050"]
             regions.append(entry)
 
         return {
@@ -182,8 +196,8 @@ class Delivery4ForecastsService:
             "regions_without_solar_data": missing_solar,
             "validation": validation,
             "source": {
-                "workbook_path": str(path.resolve()),
-                "sheet": "Delivery 4 Diagram 2",
+                "csv_path": str(path.resolve()),
+                "diagram_1_csv": str(DIAGRAM1_CSV.resolve()) if DIAGRAM1_CSV.is_file() else None,
                 "data_refresh_note": footnote,
             },
             "prd_notes": {
@@ -213,6 +227,7 @@ class Delivery4ForecastsService:
             row = {k: r.get(k) for k in cols if k in r}
             rows.append(row)
 
+        src = payload.get("source") or {}
         meta_rows = [
             {"key": "diagram_id", "value": payload.get("diagram_id")},
             {"key": "title_en", "value": payload.get("title")},
@@ -221,10 +236,10 @@ class Delivery4ForecastsService:
             {"key": "include_2030_targets", "value": True},
             {"key": "include_2050_targets", "value": include_2050},
             {"key": "include_solar_share", "value": include_solar},
-            {"key": "source_sheet", "value": (payload.get("source") or {}).get("sheet")},
+            {"key": "source_csv", "value": src.get("csv_path")},
             {
                 "key": "data_refresh_note",
-                "value": (payload.get("source") or {}).get("data_refresh_note"),
+                "value": src.get("data_refresh_note"),
             },
         ]
 
