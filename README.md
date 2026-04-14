@@ -16,9 +16,10 @@ The service is designed for dashboards, analytics platforms, energy market analy
 - [Configuration](#configuration)
 - [API Documentation](#api-documentation)
 - [Architecture](#architecture)
-- [Delivery 1 — Core Energy & Market Endpoints](#delivery-1---core-energy--market-endpoints)
-- [Delivery 2 — Renewable Infrastructure & Response Capacity](#delivery-2---renewable-infrastructure--response-capacity)
-- [Delivery 3 — CO2 Emissions Endpoints](#delivery-3---co2-emissions-endpoints)
+- [Delivery 1 - Core Energy & Market Endpoints](#delivery-1---core-energy--market-endpoints)
+- [Delivery 2 - Renewable Infrastructure & Response Capacity](#delivery-2---renewable-infrastructure--response-capacity)
+- [Delivery 3 - CO2 Emissions Endpoints](#delivery-3---co2-emissions-endpoints)
+- [Delivery 4 - Forecasts & International Comparisons](#delivery-4---forecasts--international-comparisons)
 - [Development & Extension](#development--extension)
 - [Troubleshooting](#troubleshooting)
 
@@ -45,6 +46,7 @@ The service is designed for dashboards, analytics platforms, energy market analy
 ✅ **Private Suppliers Tracking** — Monitor private supplier connections by segment  
 ✅ **Consumer Switching Requests** — Analyze supplier switching trends  
 ✅ **CO2 Emissions Insights** — Savings, ratio, mix, and emissions over time  
+✅ **Forecasts & Comparisons** — Israel renewable trajectory and international target benchmarking  
 ✅ **UI-Optimized Endpoints** — Data formatted with colors for frontend visualization  
 ✅ **Interactive Documentation** — Swagger UI + ReDoc for exploration and testing  
 ✅ **Error Handling** — Graceful responses with meaningful error messages
@@ -80,6 +82,7 @@ app/
       co2_total_production.py
       co2_total_vs_ratio.py
       heat_load_vs_generation.py
+      delivery4_forecasts.py          # Delivery 4 — Diagram 1 + Diagram 2
       api_catalog.py
       data_files.py
       energy.py
@@ -102,6 +105,7 @@ app/
     data_file_manager.py
     connected_facilities_service.py
     distributor_responses_service.py
+    delivery4_forecasts_service.py    # Delivery 4 service (CSV parsing + payload builders)
     demand_service.py
     co2_emission_savings_processor.py
     co2_emission_savings_service_.py
@@ -122,23 +126,36 @@ app/
     smp_service.py
     switching_requests_service.py
     user_service.py
+  tasks/
+    file_expiry_notifier.py
   utils/
+    __init__.py
     date_utils.py
+    emailer.py
+    enums.py
     response_formatter.py
 data_extractor.py
 data_files/
-  Files_Netunei_hashmal_mp_niyud_05-12-2025.csv
-  Files_Netunei_hashmal_mp_tzarchan_05-12-2025.csv
+  diagram_sheet_1.csv                 # Delivery 4 Diagram 1 source
+  diagram_sheet_2.csv                 # Delivery 4 Diagram 2 source
+  Files_Netunei_hashmal_mp_niyud_*.csv
+  Files_Netunei_hashmal_mp_tzarchan_*.csv
   Files_Netunei_hashmal_my_mehubarim.csv
   Files_Netunei_hashmal_my_teshuvotmehalek.csv
 Delivery 2 Sources/
   Files_Netunei_hashmal_my_mehubarim.csv
   Files_Netunei_hashmal_my_teshuvotmehalek.csv
+postman/
+  Delivery_4_Endpoints.postman_collection.json
 docker-compose.yml
 Dockerfile
 README.md
 requirements.txt
 ```
+
+Delivery 2-specific datasets are tracked in `Delivery 2 Sources/` (raw snapshots) and copied into `data_files/` before the application starts; `app/services/data_file_manager.py` tags each cache entry so `connected_facilities_service` and `distributor_responses_service` can build the Excel exports and REST responses.
+
+Delivery 4 source CSVs (`diagram_sheet_1.csv`, `diagram_sheet_2.csv`) live directly in `data_files/` and are read at request time by `delivery4_forecasts_service.py`. Override paths with env vars `DELIVERY4_DIAGRAM1_CSV_PATH` and `DELIVERY4_DIAGRAM2_CSV_PATH` if needed.
 
 ---
 
@@ -192,6 +209,8 @@ CO2_TOKEN
 SMP_TOKEN
 INTERNAL_API_KEY
 PROXY_URL
+DELIVERY4_DIAGRAM1_CSV_PATH    # optional — override diagram_sheet_1.csv location
+DELIVERY4_DIAGRAM2_CSV_PATH    # optional — override diagram_sheet_2.csv location
 ```
 
 **Using with Docker:**
@@ -241,7 +260,8 @@ Once running, access interactive documentation at:
 │  ├─ co2_emissions_mix.py                             │
 │  ├─ smp.py                                           │
 │  ├─ private_suppliers.py                             │
-│  └─ switching_requests.py
+│  ├─ switching_requests.py                            │
+│  └─ delivery4_forecasts.py                           │
 |           │
 │           │                                          │
 │           ▼                                          │
@@ -251,6 +271,7 @@ Once running, access interactive documentation at:
 │  ├─ co2_emission_savings_processor.py (parse/agg)     │
 │  ├─ energy_mix_processor.py (process)                │
 │  ├─ smp_processor.py (calculate)                     │
+│  ├─ delivery4_forecasts_service.py (CSV → payload)   │
 │  └─ *_service.py (aggregate)                         │
 │           │                                          │
 │           ▼                                          │
@@ -264,6 +285,7 @@ Once running, access interactive documentation at:
 │           External Data Sources                      │
 │  ├─ NOGA API (production mix, pricing, CO2)          │
 │  ├─ CSV Files (private suppliers, switching)         │
+│  ├─ CSV Files (Delivery 4 diagram sheets)            │
 │  └─ Mock Services (testing)                          │
 └──────────────────────────────────────────────────────┘
 ```
@@ -280,12 +302,13 @@ Once running, access interactive documentation at:
  8. **Return** — Send response to client
  9. **Delivery 2 CSV Ingestion** — Recharge the connected-facilities and distributor-responses snapshots that power the renewable infrastructure endpoints via `data_file_manager`.
 10. **Delivery 2 Aggregation & Export** — `connected_facilities_service` and `distributor_responses_service` build the series/exports that mirror the PRD tables.
+11. **Delivery 4 CSV Read** — `delivery4_forecasts_service` reads `diagram_sheet_1.csv` and `diagram_sheet_2.csv` at request time, parses header/label/data rows, and builds the forecast and comparison payloads.
 
 
 
 ---
 
-## Delivery 1 — Core Energy & Market Endpoints
+## Delivery 1 - Core Energy & Market Endpoints
 
 This section documents the Delivery 1 APIs that power the core generation mix, market pricing, SMP, private supplier, and switching-request insights.
 
@@ -883,15 +906,39 @@ All date parameters use `YYYY-MM-DD` format. Omitted dates default to sensible r
 
 ---
 
-## Delivery 2 — Renewable Infrastructure & Response Capacity
+## Delivery 2 - Renewable Infrastructure & Response Capacity
 
 Implemented: 9 | Skipped: 3 (client decisions) | Blocked: 2 (missing upstream data).
+
+### Status at a Glance
+
+| # | Endpoint | Status | Source |
+|---|---|---|---|
+| 1 | Renewable Energy Production Mix | Implemented | NOGA API |
+| 2 | Transition to Renewable Energies in Israel | Implemented | NOGA API |
+| 3 | Renewable Energy Production Potential by Industry Type | Implemented | NOGA API |
+| 4 | Renewable Energy Usage (Solar) | Skipped (client) | Electricity Authority BI |
+| 5 | Locality Status | Skipped (client) | Electricity Authority BI |
+| 6 | Renewable Energy Production Potential by District | Skipped (client) | Ministry of Energy Power BI |
+| 7 | Production Potential Comparison - Nearby Localities | Blocked (missing geo data) | Ministry of Energy Power BI |
+| 8 | Production Potential Comparison - Similar-Sized Localities | Blocked (missing population data) | Ministry of Energy Power BI |
+| 9 | Installed Capacity (Cumulative) | Implemented | Electricity Authority CSV |
+| 10 | Installed Capacity - Growth Rate | Implemented | Electricity Authority CSV |
+| 11 | Facility Capacity Connected Over Time by Facility Size | Implemented | Electricity Authority CSV |
+| 12 | Response Capacity Divided by Period | Implemented | Electricity Authority CSV |
+| 13 | Response Capacity Divided by Facility Size (kW) | Implemented | Electricity Authority CSV |
+| 14 | Response Capacity Divided by District | Implemented | Electricity Authority CSV |
 
 #### Endpoints 1–3: Renewable Energy Mix & Transition (NOGA API)
 
 These routes call the NOGA API, divide each 5-minute sample by 12 to convert into hourly equivalents, then aggregate into daily/monthly series.
 
 ##### GET /api/v1/renewables/production-mix
+
+- **Router:** `app/api/v1/renewable_mix.py`
+- **Service:** `app/services/renewable_mix_service.py`
+- **Data Source:** NOGA API (5-minute measurements converted to hourly aggregates)
+- **Export:** `GET /api/v1/renewables/production-mix/export`
 
 **Description:** Returns the renewable portion of the production mix with breakdowns for solar, wind, and other sources.
 
@@ -939,6 +986,11 @@ These routes call the NOGA API, divide each 5-minute sample by 12 to convert int
 
 ##### GET /api/v1/renewables/transition
 
+- **Router:** `app/api/v1/renewable_transition.py`
+- **Service:** `app/services/renewable_transition_service.py`
+- **Data Source:** NOGA API
+- **Export:** `GET /api/v1/renewables/transition/export`
+
 **Description:** Shows the national transition to renewables month by month.
 
 **Query Parameters:**
@@ -964,6 +1016,11 @@ These routes call the NOGA API, divide each 5-minute sample by 12 to convert int
 **Export:** `GET /api/v1/renewables/transition/export`
 
 ##### GET /api/v1/renewables/potential-by-industry
+
+- **Router:** `app/api/v1/renewable_potential_industry.py`
+- **Service:** `app/services/renewable_potential_industry_service.py`
+- **Data Source:** NOGA API
+- **Export:** `GET /api/v1/renewables/potential-by-industry/export`
 
 **Description:** Estimates renewable production potential per industry vertical.
 
@@ -993,6 +1050,11 @@ These routes call the NOGA API, divide each 5-minute sample by 12 to convert int
 These endpoints ingest `Files_Netunei_hashmal_my_mehubarim.csv` (63,687 records, cp1255 encoding) that is kept under `data_files/` and mirrored in `Delivery 2 Sources/` for safekeeping. `connected_facilities_service.py` reads the file via `data_file_manager`, applies the `DataFileSource.CONNECTED_FACILITIES` enum, and feeds the three APIs below. Filters include `year`, `district`, and `technology`.
 
 ##### GET /api/v1/renewables/installed-capacity/cumulative
+
+- **Router:** `app/api/v1/installed_capacity.py`
+- **Service:** `app/services/connected_facilities_service.py`
+- **Data Source:** `Files_Netunei_hashmal_my_mehubarim.csv` → `DataFileSource.CONNECTED_FACILITIES`
+- **Export:** `GET /api/v1/renewables/installed-capacity/cumulative/export`
 
 **Description:** Returns the cumulative installed capacity time series with technology and district breakdowns.
 
@@ -1031,6 +1093,10 @@ These endpoints ingest `Files_Netunei_hashmal_my_mehubarim.csv` (63,687 records,
 
 ##### GET /api/v1/renewables/installed-capacity/growth
 
+- **Router/Service:** `app/api/v1/installed_capacity.py` / `app/services/connected_facilities_service.py`
+- **Data Source:** `Files_Netunei_hashmal_my_mehubarim.csv`
+- **Export:** `GET /api/v1/renewables/installed-capacity/growth/export`
+
 **Description:** Reports yearly additions plus percentage growth on the cumulative series.
 
 **Query Parameters:**
@@ -1059,6 +1125,10 @@ These endpoints ingest `Files_Netunei_hashmal_my_mehubarim.csv` (63,687 records,
 **Export:** `GET /api/v1/renewables/installed-capacity/growth/export`
 
 ##### GET /api/v1/renewables/installed-capacity/by-facility-size
+
+- **Router/Service:** `app/api/v1/installed_capacity.py` / `app/services/connected_facilities_service.py`
+- **Data Source:** `Files_Netunei_hashmal_my_mehubarim.csv`
+- **Export:** `GET /api/v1/renewables/installed-capacity/by-facility-size/export`
 
 **Description:** Breaks the cumulative series by seven facility size brackets.
 
@@ -1096,6 +1166,11 @@ These endpoints ingest `Files_Netunei_hashmal_my_mehubarim.csv` (63,687 records,
 These endpoints process `Files_Netunei_hashmal_my_teshuvotmehalek.csv` (76,876 records, cp1255 encoding). `distributor_responses_service.py` and `data_file_manager.py` treat cancellations, response types, districts, and technologies to build the requested metrics.
 
 ##### GET /api/v1/renewables/response-capacity/by-period
+
+- **Router:** `app/api/v1/renewables/response-capacity/by-period`
+- **Service:** `app/services/distributor_responses_service.py`
+- **Data Source:** `Files_Netunei_hashmal_my_teshuvotmehalek.csv` → `DataFileSource.DISTRIBUTOR_RESPONSES`
+- **Export:** `GET /api/v1/renewables/response-capacity/by-period/export`
 
 **Description:** Aggregated response capacity per time period with breakdowns by response type.
 
@@ -1137,6 +1212,10 @@ These endpoints process `Files_Netunei_hashmal_my_teshuvotmehalek.csv` (76,876 r
 
 ##### GET /api/v1/renewables/response-capacity/by-size
 
+- **Router/Service:** `app/api/v1/renewables/response-capacity/by-size` / `app/services/distributor_responses_service.py`
+- **Data Source:** `Files_Netunei_hashmal_my_teshuvotmehalek.csv`
+- **Export:** `GET /api/v1/renewables/response-capacity/by-size/export`
+
 **Description:** Shows response MW split by the same seven size brackets plus yearly totals.
 
 **Query Parameters:**
@@ -1172,6 +1251,10 @@ These endpoints process `Files_Netunei_hashmal_my_teshuvotmehalek.csv` (76,876 r
 
 ##### GET /api/v1/renewables/response-capacity/by-district
 
+- **Router/Service:** `app/api/v1/renewables/response-capacity/by-district` / `app/services/distributor_responses_service.py`
+- **Data Source:** `Files_Netunei_hashmal_my_teshuvotmehalek.csv`
+- **Export:** `GET /api/v1/renewables/response-capacity/by-district/export`
+
 **Description:** Aggregates response capacity per district with a technology breakdown.
 
 **Query Parameters:**
@@ -1206,7 +1289,70 @@ These endpoints process `Files_Netunei_hashmal_my_teshuvotmehalek.csv` (76,876 r
 **Export:** `GET /api/v1/renewables/response-capacity/by-district/export`
 
 
-### CO2 Emissions (Delivery 3) Endpoints
+### Data Sources
+
+#### Source 1: NOGA API (Endpoints 1-3)
+
+| Property | Details |
+|---|---|
+| **Base URL** | `https://apim-api.noga-iso.co.il/` |
+| **Path** | `PRODUCTIONMIX/PRODMIXAPI/v1` |
+| **Method** | POST |
+| **Authentication** | `Ocp-Apim-Subscription-Key` header (env var: `NOGA_API_TOKEN`) |
+| **Request Payload** | `{ "fromDate": "dd-mm-yyyy", "toDate": "dd-mm-yyyy" }` |
+| **Energy Conversion** | Each sample value (MW) ÷ 12 = MWh |
+| **Service** | `app/services/noga_service.py` |
+
+#### Source 2: Electricity Authority CSV - Connected Facilities (Endpoints 9-11)
+
+| Property | Details |
+|---|---|
+| **File** | `Files_Netunei_hashmal_my_mehubarim.csv` |
+| **Encoding** | `cp1255` |
+| **Records** | 63,687 rows |
+| **Key Columns** | District, Municipal Status, Council/City, Locality, Technology, Classification, Regulation, Date, Capacity (MW) |
+| **Service** | `app/services/connected_facilities_service.py` |
+| **Enum** | `DataFileSource.CONNECTED_FACILITIES` |
+
+#### Source 3: Electricity Authority CSV - Distributor Responses (Endpoints 12-14)
+
+| Property | Details |
+|---|---|
+| **File** | `Files_Netunei_hashmal_my_teshuvotmehalek.csv` |
+| **Encoding** | `cp1255` |
+| **Records** | 76,876 rows |
+| **Key Columns** | District, Municipal Status, Locality, Technology, Classification, Response Type, Regulation, Date, Capacity (MW), Cancellation Flag |
+| **Service** | `app/services/distributor_responses_service.py` |
+| **Enum** | `DataFileSource.DISTRIBUTOR_RESPONSES` |
+
+### Postman & Verification
+
+A dedicated Postman collection (`delivery-2.postman_collection.json`) covers all Delivery 2 endpoints. Use the collection variables `base_url` (`http://localhost:8010` by default) and `api_key` (set it to your `INTERNAL_API_KEY`).
+
+Verified test results:
+
+```
+PASS  EP 9  - Installed Capacity (Cumulative)     series: 154 points
+PASS  EP 9  - Filtered by South district           series: 134 points
+PASS  EP 10 - Installed Capacity (Growth)          series: 17 points
+PASS  EP 10 - Filtered by Photovoltaic             series: 17 points
+PASS  EP 11 - Capacity by Facility Size            series: 17 points
+PASS  EP 11 - Filtered up to 2023                  series: 15 points
+PASS  EP 12 - Response Capacity by Period          series: 71 points
+PASS  EP 12 - Filtered to 2024                     series: 12 points
+PASS  EP 13 - Response Capacity by Size            series: 6 brackets
+PASS  EP 14 - Response Capacity by District        series: 8 districts
+PASS  EP 14 - Filtered by Photovoltaic             series: 8 districts
+PASS  EP 9  Export                                 9.7 KB Excel
+PASS  EP 10 Export                                 5.4 KB Excel
+PASS  EP 11 Export                                 7.8 KB Excel
+PASS  EP 12 Export                                 7.0 KB Excel
+PASS  EP 13 Export                                 6.5 KB Excel
+PASS  EP 14 Export                                 5.9 KB Excel
+```
+
+
+## Delivery 3 - CO2 Emissions Endpoints
 
 #### `GET /api/v1/co2/emissions-savings`
 
@@ -1662,6 +1808,303 @@ These endpoints process `Files_Netunei_hashmal_my_teshuvotmehalek.csv` (76,876 r
 
 
 
+
+## Delivery 4 - Forecasts & International Comparisons
+
+Delivery 4 exposes two diagrams from the PRD section "תחזיות והשוואות" (Forecasts & Comparisons). Both endpoints read from dedicated CSV source files in `data_files/`.
+
+### Status at a Glance
+
+| # | Endpoint | Status | Source |
+|---|---|---|---|
+| 1 | Israel Renewable Forecast Trajectory (Diagram 1) | Implemented | `diagram_sheet_1.csv` |
+| 2 | International Renewable Comparison (Diagram 2) | Implemented | `diagram_sheet_2.csv` |
+
+### Route Prefixes
+
+The router is mounted at three prefixes for backwards compatibility:
+
+| Prefix | Schema Visibility |
+|---|---|
+| `/api/v1/renewables/delivery-4/` | **Primary** (shown in docs) |
+| `/api/v1/renewables/` | Alias (hidden from schema) |
+| `/api/v1/forecasts/` | Alias (hidden from schema) |
+
+---
+
+#### Diagram 1: Israel Renewable Forecast Trajectory
+
+##### GET /api/v1/renewables/delivery-4/renewable-forecast-israel
+
+- **Router:** `app/api/v1/delivery4_forecasts.py`
+- **Service:** `app/services/delivery4_forecasts_service.py`
+- **Data Source:** `data_files/diagram_sheet_1.csv` (override with env var `DELIVERY4_DIAGRAM1_CSV_PATH`)
+- **Export:** `GET /api/v1/renewables/delivery-4/renewable-forecast-israel/export`
+
+**Description:** Returns the yearly Israel renewable forecast trajectory from 2020 to 2050 with four series: actual renewable rate (column bar), realistic forecast (line), Ministry of Energy target (line), and NZO target (line). Values are fractions 0–1 (multiply by 100 for percent).
+
+**Graph Type:** Column bar chart (renewable rate) + 3 line graphs (realistic forecast, Ministry of Energy target, NZO target).
+
+**Response (200 OK):**
+
+```json
+{
+    "title": "Renewables forecast trajectory in Israel",
+    "title_he": "תחזית שיעור אנרגיות מתחדשות בישראל",
+    "value_unit": "fraction",
+    "value_unit_description": "All numeric values are fractions in [0, 1]; multiply by 100 for percent.",
+    "series_labels": {
+        "renewable_rate": "Renewable rate",
+        "realistic_forecast": "Realistic forecast",
+        "ministry_target": "Ministry of Energy target",
+        "nzo_target": "NZO target"
+    },
+    "data": [
+        {
+            "year": 2020,
+            "renewable_rate": 0.063,
+            "realistic_forecast": 0.063,
+            "ministry_target": 0.1,
+            "nzo_target": 0.275
+        },
+        {
+            "year": 2021,
+            "renewable_rate": 0.082,
+            "realistic_forecast": 0.082,
+            "ministry_target": 0.12,
+            "nzo_target": 0.298
+        },
+        {
+            "year": 2024,
+            "renewable_rate": 0.146,
+            "realistic_forecast": 0.146,
+            "ministry_target": 0.18,
+            "nzo_target": 0.365
+        },
+        {
+            "year": 2030,
+            "renewable_rate": 0.0,
+            "realistic_forecast": 0.274,
+            "ministry_target": 0.3,
+            "nzo_target": 0.5
+        },
+        {
+            "year": 2050,
+            "renewable_rate": 0.0,
+            "realistic_forecast": 0.7006666667,
+            "ministry_target": 0.7,
+            "nzo_target": 0.95
+        }
+    ],
+    "metadata": {
+        "year_start": 2020,
+        "year_end": 2050,
+        "realistic_forecast_factor": 0.02133333333
+    },
+    "source": {
+        "csv_path": "/absolute/path/to/data_files/diagram_sheet_1.csv"
+    }
+}
+```
+
+**Notes:**
+- `renewable_rate` is 0.0 for future years (2025+) where actuals are not yet available.
+- `realistic_forecast` is calculated using the factor shown in `metadata.realistic_forecast_factor`.
+- Full response contains 31 data points (2020–2050); sample above is truncated for brevity.
+
+---
+
+##### GET /api/v1/renewables/delivery-4/renewable-forecast-israel/export
+
+**Description:** Export Diagram 1 to Excel
+
+**Response:** Streamed Excel file (`delivery4_diagram1_renewable_forecast_israel.xlsx`) with three sheets:
+- **Diagram 1 data** — year, renewable_rate, realistic_forecast, ministry_target, nzo_target
+- **Series labels** — human-readable labels for each series key
+- **Meta** — diagram ID, titles, value unit, year range, forecast factor, source CSV path
+
+---
+
+#### Diagram 2: International Renewable Comparison
+
+##### GET /api/v1/renewables/delivery-4/international-renewable-comparison
+
+- **Router:** `app/api/v1/delivery4_forecasts.py`
+- **Service:** `app/services/delivery4_forecasts_service.py`
+- **Data Source:** `data_files/diagram_sheet_2.csv` (override with env var `DELIVERY4_DIAGRAM2_CSV_PATH`)
+- **Export:** `GET /api/v1/renewables/delivery-4/international-renewable-comparison/export`
+
+**Description:** Returns a horizontal bar comparison of countries/regions showing 2024 solar share, 2030 renewable target, and 2050 renewable target. Values are fractions 0–1.
+
+**Query Parameters:**
+
+- `include_2050_targets` (optional, bool, default `true`) — Include 2050 renewable target series
+- `include_solar_share` (optional, bool, default `true`) — Include 2024 solar share series
+
+**Response (200 OK):**
+
+```json
+{
+    "diagram_id": "delivery_4_diagram_2",
+    "title": "Renewables — targets vs actual (international comparison)",
+    "title_he": "אנרגיות מתחדשות יעדים מול ייצור בפועל",
+    "value_unit": "fraction",
+    "value_unit_description": "All numeric values are fractions in [0, 1]; multiply by 100 for percent.",
+    "filters": {
+        "include_2030_targets": true,
+        "include_2050_targets": true,
+        "include_solar_share": true
+    },
+    "column_labels": {
+        "solar_share_2024": {
+            "en": "2024 Solar Share",
+            "he": "שיעור ייצור סולארי (2024)"
+        },
+        "renewable_target_2030": {
+            "en": "2030 renewable target",
+            "he": "יעד אנרגיות מתחדשות 2030"
+        },
+        "renewable_target_2050": {
+            "en": "2050 renewable target",
+            "he": "יעד אנרגיות מתחדשות 2050"
+        }
+    },
+    "regions": [
+        {
+            "region": "Israel",
+            "region_he": "ישראל",
+            "region_key": "israel",
+            "renewable_target_2030": 0.3,
+            "solar_share_2024": 0.146,
+            "renewable_target_2050": 0.77
+        },
+        {
+            "region": "Germany",
+            "region_he": "גרמניה",
+            "region_key": "germany",
+            "renewable_target_2030": 0.8,
+            "solar_share_2024": 0.146,
+            "renewable_target_2050": 1.0
+        },
+        {
+            "region": "Spain",
+            "region_he": "ספרד",
+            "region_key": "spain",
+            "renewable_target_2030": 0.81,
+            "solar_share_2024": 0.187,
+            "renewable_target_2050": 1.0
+        },
+        {
+            "region": "Italy",
+            "region_he": "איטליה",
+            "region_key": "italy",
+            "renewable_target_2030": 0.55,
+            "solar_share_2024": 0.133,
+            "renewable_target_2050": 1.0
+        },
+        {
+            "region": "Greece",
+            "region_he": "יוון",
+            "region_key": "greece",
+            "renewable_target_2030": 0.75,
+            "solar_share_2024": 0.174,
+            "renewable_target_2050": 1.0
+        },
+        {
+            "region": "California",
+            "region_he": "קליפורניה",
+            "region_key": "california",
+            "renewable_target_2030": 0.5,
+            "solar_share_2024": 0.234,
+            "renewable_target_2050": 1.0
+        }
+    ],
+    "regions_without_solar_data": [],
+    "validation": [],
+    "source": {
+        "csv_path": "/absolute/path/to/data_files/diagram_sheet_2.csv",
+        "source_notes": [
+            "Sources: IEA",
+            "Spanish NECP 2021 - 2030",
+            "Greek NECP 2021 - 2030",
+            "California Energy Commission",
+            "Israeli Electricity Authority & Ministry of Energy"
+        ]
+    },
+    "prd_notes": {
+        "filter_2030_mandatory": true,
+        "solar_not_published": "When the solar filter is on, list `regions_without_solar_data` beside the chart (PRD: countries without solar data)."
+    }
+}
+```
+
+**Notes:**
+- 2030 targets are always included (mandatory per PRD); 2050 and solar share are toggleable.
+- `regions_without_solar_data` lists regions where solar share is `null` (currently all regions have data).
+- `validation` flags rows where solar share exceeds the 2030 renewable target (sanity check).
+- `source.source_notes` contains the reference citations from the original data sheet.
+
+---
+
+##### GET /api/v1/renewables/delivery-4/international-renewable-comparison/export
+
+**Description:** Export Diagram 2 to Excel
+
+**Query Parameters:**
+
+- `include_2050_targets` (optional, bool, default `true`)
+- `include_solar_share` (optional, bool, default `true`)
+
+**Response:** Streamed Excel file (`delivery4_diagram2_international_renewable_comparison.xlsx`) with up to four sheets:
+- **Diagram 2 data** — region, region_key, solar_share_2024, renewable_target_2030, renewable_target_2050
+- **Meta** — diagram ID, titles, value unit, filter state, source CSV path
+- **Sources** — reference citations from the data sheet
+- **No solar data** — regions missing solar data (only present when the solar filter is on and gaps exist)
+
+---
+
+### Data Sources
+
+#### Source 1: Diagram 1 CSV — Israel Forecast Trajectory
+
+| Property | Details |
+|---|---|
+| **File** | `data_files/diagram_sheet_1.csv` |
+| **Encoding** | `utf-8-sig` |
+| **Records** | 31 yearly rows (2020–2050) + header/label rows |
+| **Key Columns** | Year, שיעור מתחדשות (Renewable rate), צפי ריאלי (Realistic forecast), יעדי משרד האנרגיה (Ministry target), יעדי NZO (NZO target), פקטור צפי ריאלי (Factor) |
+| **Service** | `app/services/delivery4_forecasts_service.py` → `get_israel_forecast()` |
+| **Env Override** | `DELIVERY4_DIAGRAM1_CSV_PATH` |
+
+#### Source 2: Diagram 2 CSV — International Comparison
+
+| Property | Details |
+|---|---|
+| **File** | `data_files/diagram_sheet_2.csv` |
+| **Encoding** | `utf-8-sig` |
+| **Records** | 6 country/region rows + header/label/source rows |
+| **Key Columns** | Region (EN), Region (HE), שיעור הייצור הסולארי בשנת 2024 (Solar share 2024), יעד אנרגיה מתחדשת לשנת 2030 (2030 target), יעד אנרגיה מתחדשת לשנת 2050 (2050 target) |
+| **Service** | `app/services/delivery4_forecasts_service.py` → `get_international_comparison()` |
+| **Env Override** | `DELIVERY4_DIAGRAM2_CSV_PATH` |
+
+### Postman & Verification
+
+A dedicated Postman collection (`postman/Delivery_4_Endpoints.postman_collection.json`) covers all Delivery 4 endpoints. Set the collection variables `baseUrl` (`http://localhost:8002` by default) and `apiKey` (set to your `INTERNAL_API_KEY`). The `X-Api-Key` header is injected automatically via collection-level API Key auth.
+
+Verified test results:
+
+```
+PASS  Diagram 1 - Renewable Forecast Israel              data: 31 years (2020–2050)
+PASS  Diagram 1 - Export                                  3 Excel sheets
+PASS  Diagram 2 - International Comparison (defaults)     regions: 6
+PASS  Diagram 2 - International Comparison (2030 only)    regions: 6 (no solar/2050)
+PASS  Diagram 2 - Export (defaults)                       4 Excel sheets
+PASS  Diagram 2 - Export (2030 only)                      2 Excel sheets
+PASS  Compatibility alias /api/v1/renewables/*            matches primary
+PASS  Compatibility alias /api/v1/forecasts/*             matches primary
+```
+
+---
 
 ## Development & Extension
 
