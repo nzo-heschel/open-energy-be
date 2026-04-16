@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
@@ -11,8 +12,12 @@ from typing import Dict, List, Tuple
 import pandas as pd
 from fastapi import HTTPException
 
+from app.services.csv_downloader_service import ensure_fresh_ims_weather_file
 from app.services.noga_service import NogaService
 from app.utils.date_utils import to_noga_date
+from app.utils.enums import DataFileSource
+
+logger = logging.getLogger(__name__)
 
 
 class HeatLoadView(str, Enum):
@@ -67,7 +72,7 @@ class HeatLoadVsGenerationService:
         return Path(__file__).resolve().parents[2]
 
     @staticmethod
-    def _resolve_csv_path() -> Path:
+    def _resolve_csv_path(start_dt: datetime, end_dt: datetime) -> Path:
         override = os.getenv("HEAT_LOAD_CSV_PATH")
         if override:
             path = Path(override)
@@ -77,6 +82,11 @@ class HeatLoadVsGenerationService:
                 status_code=424,
                 detail=f"HEAT_LOAD_CSV_PATH is set but file was not found: {path}",
             )
+
+        try:
+            return ensure_fresh_ims_weather_file(start_dt, end_dt)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("IMS weather auto-refresh failed, falling back to local data_*.csv: %s", exc)
 
         root = HeatLoadVsGenerationService._project_root()
         candidates = sorted(root.glob("data_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -90,8 +100,10 @@ class HeatLoadVsGenerationService:
             raise HTTPException(
                 status_code=428,
                 detail=(
-                    "Heat load source CSV is missing. Add a file named like 'data_*.csv' "
-                    "to the project root (or data_files) or configure HEAT_LOAD_CSV_PATH."
+                    "Heat load source CSV is missing. Configure IMS_TOKEN and trigger "
+                    "/api/v1/data-files/fetch-ims-weather, or add a file named like "
+                    "'data_*.csv' to the project root (or data_files), or configure "
+                    "HEAT_LOAD_CSV_PATH."
                 ),
             )
         return candidates[0]
@@ -113,7 +125,7 @@ class HeatLoadVsGenerationService:
 
     @staticmethod
     def _load_weather_dataframe(start_dt: datetime, end_dt: datetime) -> Tuple[pd.DataFrame, List[str]]:
-        csv_path = HeatLoadVsGenerationService._resolve_csv_path()
+        csv_path = HeatLoadVsGenerationService._resolve_csv_path(start_dt, end_dt)
         try:
             df = pd.read_csv(csv_path, encoding="utf-8-sig")
         except UnicodeDecodeError:
@@ -347,7 +359,13 @@ class HeatLoadVsGenerationService:
                 {"metric": "view", "value": payload.get("view")},
                 {"metric": "start_date", "value": payload.get("start_date")},
                 {"metric": "end_date", "value": payload.get("end_date")},
-                {"metric": "source_file", "value": HeatLoadVsGenerationService._resolve_csv_path().name},
+                {
+                    "metric": "source_file",
+                    "value": HeatLoadVsGenerationService._resolve_csv_path(
+                        datetime.fromisoformat(payload.get("start_date")),
+                        datetime.fromisoformat(payload.get("end_date")),
+                    ).name,
+                },
                 {"metric": "heat_load_formula", "value": THI_FORMULA_TEXT},
                 {"metric": "stations_configured", "value": ", ".join(STATION_LABELS.values())},
                 {"metric": "note", "value": payload.get("note")},

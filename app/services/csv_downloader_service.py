@@ -10,11 +10,15 @@ eliminating the need for manual download + upload.
 from __future__ import annotations
 
 import calendar
+import csv
 import logging
 import os
-from datetime import datetime
+import re
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
+from zoneinfo import ZoneInfo
 
 from app.services.data_file_manager import (
     DATA_FILES_DIR,
@@ -47,10 +51,33 @@ SOURCE_URLS: Dict[str, str] = {
         "https://www.gov.il/BlobFolder/generalpage/"
         "bipua2024/he/Files_Netunei_hashmal_my_teshuvotmehalek.csv"
     ),
+    # Delivery 3 - IMS weather API for heat-load endpoint.
+    DataFileSource.IMS_HEAT_LOAD_WEATHER.value: "https://api.ims.gov.il/v1/envista/stations",
 }
 
 # Which datasets this downloader supports.
 DOWNLOADABLE_SOURCES = set(SOURCE_URLS.keys())
+
+IMS_COLUMNS = ["תחנה", "תאריך ושעה (שעון עולמי)", "לחות יחסית (%)", "טמפרטורה (C°)"]
+IMS_API_BASE_URL = os.getenv("IMS_API_BASE_URL", "https://api.ims.gov.il/v1/envista").rstrip("/")
+IMS_STATIONS_URL = f"{IMS_API_BASE_URL}/stations"
+IMS_JERUSALEM_TZ = ZoneInfo("Asia/Jerusalem")
+IMS_LOOKBACK_DAYS = int(os.getenv("IMS_LOOKBACK_DAYS", "30"))
+IMS_REQUEST_TIMEOUT_SECONDS = float(os.getenv("IMS_REQUEST_TIMEOUT_SECONDS", "12"))
+IMS_RETRY_ATTEMPTS = int(os.getenv("IMS_RETRY_ATTEMPTS", "2"))
+IMS_MIN_SPLIT_RANGE_DAYS = int(os.getenv("IMS_MIN_SPLIT_RANGE_DAYS", "7"))
+
+IMS_TARGET_STATIONS = {
+    "tel_aviv_coast": ["tel aviv coast", "תל אביב חוף", "tel-aviv coast"],
+    "jerusalem_center": ["jerusalem center", "jerusalem centre", "ירושלים מרכז"],
+    "jerusalem_givat_ram": ["jerusalem givat ram", "ירושלים גבעת רם", "givat ram"],
+}
+
+IMS_STATION_OUTPUT = {
+    "tel_aviv_coast": "תל-אביב, חוף",
+    "jerusalem_center": "ירושלים, מרכז",
+    "jerusalem_givat_ram": "ירושלים, גבעת רם",
+}
 
 
 def _dated_filename(dataset: str, content_type: Optional[str] = None) -> str:
@@ -176,7 +203,406 @@ def _save_downloaded_file(dataset: str, content: bytes, content_type: Optional[s
 # Public API: used by /data-files/fetch and /data-files/fetch-all
 # ─────────────────────────────────────────────────────────────────────────
 
-async def download_csv(dataset: str) -> Dict:
+def _normalize_name(value: str) -> str:
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[^\w\s]", " ", text)
+    return " ".join(text.split())
+
+
+def _extract_station_id(station: Dict[str, Any]) -> Optional[int]:
+    for key in ("stationId", "station_id", "id"):
+        value = station.get(key)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _station_name(station: Dict[str, Any]) -> str:
+    return str(station.get("name") or station.get("shortName") or station.get("stationTarget") or "")
+
+
+def _is_active_station(station: Dict[str, Any]) -> bool:
+    active = station.get("active")
+    return True if active is None else bool(active)
+
+
+def _pick_ims_channel_id(station: Dict[str, Any], metric_code: str) -> Optional[int]:
+    monitors = station.get("monitors") or []
+    if not isinstance(monitors, list):
+        return None
+
+    metric = metric_code.upper()
+    preferred: Optional[int] = None
+    for monitor in monitors:
+        if not isinstance(monitor, dict):
+            continue
+        channel_id = monitor.get("channelId")
+        if channel_id is None:
+            continue
+        try:
+            channel_id = int(channel_id)
+        except (TypeError, ValueError):
+            continue
+        name = _normalize_name(str(monitor.get("name") or ""))
+        alias = _normalize_name(str(monitor.get("alias") or ""))
+        units = _normalize_name(str(monitor.get("units") or ""))
+        is_active = bool(monitor.get("active", True))
+
+        if metric == "TD":
+            is_match = (
+                name.startswith("td")
+                or alias.startswith("td")
+                or "temperature" in name
+                or "temperature" in alias
+                or "degc" in units
+            )
+        else:
+            is_match = (
+                name.startswith("rh")
+                or alias.startswith("rh")
+                or "humidity" in name
+                or "humidity" in alias
+                or units == "%"
+            )
+        if not is_match:
+            continue
+        if is_active:
+            return channel_id
+        if preferred is None:
+            preferred = channel_id
+    return preferred
+
+
+def _resolve_ims_station_config(stations: list[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+    normalized_targets = {
+        key: [_normalize_name(alias) for alias in aliases]
+        for key, aliases in IMS_TARGET_STATIONS.items()
+    }
+
+    matches: Dict[str, Dict[str, int]] = {}
+    for target_key, aliases in normalized_targets.items():
+        active_candidate: Optional[Dict[str, Any]] = None
+        inactive_candidate: Optional[Dict[str, Any]] = None
+
+        for station in stations:
+            if not isinstance(station, dict):
+                continue
+            station_id = _extract_station_id(station)
+            if station_id is None:
+                continue
+            normalized_station_name = _normalize_name(_station_name(station))
+            if not normalized_station_name:
+                continue
+            if not any(alias in normalized_station_name for alias in aliases):
+                continue
+            if _is_active_station(station):
+                active_candidate = station
+                break
+            if inactive_candidate is None:
+                inactive_candidate = station
+
+        selected = active_candidate or inactive_candidate
+        if not selected:
+            continue
+
+        station_id = _extract_station_id(selected)
+        if station_id is None:
+            continue
+        td_channel = _pick_ims_channel_id(selected, "TD")
+        rh_channel = _pick_ims_channel_id(selected, "RH")
+        if td_channel is None or rh_channel is None:
+            continue
+        matches[target_key] = {
+            "station_id": station_id,
+            "td_channel": td_channel,
+            "rh_channel": rh_channel,
+        }
+    return matches
+
+
+def _parse_ims_datetime_to_utc(raw_value: Any) -> Optional[datetime]:
+    if raw_value is None:
+        return None
+    raw_text = str(raw_value).strip()
+    if not raw_text:
+        return None
+
+    candidate = raw_text.replace("Z", "+00:00")
+    dt: Optional[datetime] = None
+    for fmt in (
+        None,
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%d/%m/%Y %H:%M",
+    ):
+        try:
+            if fmt is None:
+                dt = datetime.fromisoformat(candidate)
+            else:
+                dt = datetime.strptime(candidate, fmt)
+            break
+        except ValueError:
+            continue
+    if dt is None:
+        return None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=IMS_JERUSALEM_TZ)
+    return dt.astimezone(timezone.utc)
+
+
+def _extract_metric_value(entry: Dict[str, Any], metric_code: str) -> Optional[float]:
+    channels = entry.get("channels")
+    metric = metric_code.upper()
+
+    if isinstance(channels, list):
+        for channel in channels:
+            if not isinstance(channel, dict):
+                continue
+            status = channel.get("status")
+            valid = channel.get("valid")
+            if valid is False:
+                continue
+            if status not in (None, 1, "1"):
+                continue
+            name = _normalize_name(str(channel.get("name") or ""))
+            alias = _normalize_name(str(channel.get("alias") or ""))
+            if metric == "TD":
+                matches = name.startswith("td") or alias.startswith("td") or "temperature" in name
+            else:
+                matches = name.startswith("rh") or alias.startswith("rh") or "humidity" in name
+            if not matches:
+                continue
+            try:
+                return float(channel.get("value"))
+            except (TypeError, ValueError):
+                continue
+
+    if "value" in entry:
+        try:
+            return float(entry.get("value"))
+        except (TypeError, ValueError):
+            return None
+
+    return None
+
+
+def _decode_response_snippet(content: bytes, limit: int = 160) -> str:
+    text = content[:limit].decode("utf-8", errors="ignore").replace("\n", " ").replace("\r", " ")
+    return " ".join(text.split())
+
+
+def _parse_ims_response_json(resp: Any, *, context: str) -> Any:
+    content_type = (resp.headers.get("content-type") or "").lower()
+    if "json" not in content_type:
+        raise ValueError(
+            f"{context} returned non-JSON content-type '{content_type or 'unknown'}': "
+            f"{_decode_response_snippet(resp.content)}"
+        )
+
+    try:
+        return resp.json()
+    except ValueError as exc:
+        raise ValueError(
+            f"{context} returned invalid JSON: {_decode_response_snippet(resp.content)}"
+        ) from exc
+
+
+def _fetch_ims_station_metric(
+    *,
+    token: str,
+    station_id: int,
+    channel_id: int,
+    metric_code: str,
+    from_date: datetime,
+    to_date: datetime,
+) -> Dict[datetime, float]:
+    import requests
+
+    headers = {"Authorization": f"ApiToken {token}"}
+    def _fetch_range(range_start: datetime, range_end: datetime) -> Dict[datetime, float]:
+        from_str = range_start.strftime("%Y/%m/%d")
+        to_str = range_end.strftime("%Y/%m/%d")
+        url = f"{IMS_STATIONS_URL}/{station_id}/data/{channel_id}?from={from_str}&to={to_str}"
+        context = f"IMS station {station_id} channel {channel_id} ({metric_code}) {from_str}->{to_str}"
+
+        last_error: Optional[Exception] = None
+        for _ in range(max(1, IMS_RETRY_ATTEMPTS)):
+            try:
+                resp = requests.get(url, headers=headers, timeout=IMS_REQUEST_TIMEOUT_SECONDS)
+                resp.raise_for_status()
+                payload = _parse_ims_response_json(resp, context=context)
+                rows = payload.get("data") if isinstance(payload, dict) else None
+                if not isinstance(rows, list):
+                    return {}
+
+                result: Dict[datetime, float] = {}
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    ts_utc = _parse_ims_datetime_to_utc(row.get("datetime"))
+                    if ts_utc is None:
+                        continue
+                    metric_value = _extract_metric_value(row, metric_code)
+                    if metric_value is None:
+                        continue
+                    result[ts_utc.replace(tzinfo=None)] = metric_value
+                return result
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+
+        range_days = max(0, (range_end - range_start).days)
+        if range_days <= IMS_MIN_SPLIT_RANGE_DAYS:
+            logger.warning("Skipping IMS slice after repeated failures: %s", context)
+            if last_error:
+                logger.warning("Last IMS slice error: %s", last_error)
+            return {}
+
+        midpoint = range_start + timedelta(days=range_days // 2)
+        left = _fetch_range(range_start, midpoint)
+        right_start = midpoint + timedelta(days=1)
+        right = _fetch_range(right_start, range_end) if right_start <= range_end else {}
+        left.update(right)
+        return left
+
+    return _fetch_range(from_date, to_date)
+
+
+def _build_ims_weather_csv_content() -> tuple[bytes, Dict[str, Any]]:
+    return _build_ims_weather_csv_content_for_range()
+
+
+def _build_ims_weather_csv_content_for_range(
+    start_dt: Optional[datetime] = None,
+    end_dt: Optional[datetime] = None,
+) -> tuple[bytes, Dict[str, Any]]:
+    import requests
+
+    token = os.getenv("IMS_TOKEN")
+    if not token:
+        raise ValueError("IMS_TOKEN is not configured.")
+
+    headers = {"Authorization": f"ApiToken {token}"}
+    stations_response = requests.get(
+        IMS_STATIONS_URL,
+        headers=headers,
+        timeout=IMS_REQUEST_TIMEOUT_SECONDS,
+    )
+    stations_response.raise_for_status()
+    stations_payload = _parse_ims_response_json(stations_response, context="IMS stations list")
+    if not isinstance(stations_payload, list):
+        raise ValueError("Unexpected IMS stations response format.")
+
+    station_config = _resolve_ims_station_config(stations_payload)
+    missing_station_keys = [key for key in IMS_TARGET_STATIONS if key not in station_config]
+    if missing_station_keys:
+        missing_labels = [IMS_STATION_OUTPUT.get(key, key) for key in missing_station_keys]
+        raise ValueError(
+            "Missing IMS station/channel configuration for: " + ", ".join(missing_labels)
+        )
+
+    if end_dt is None:
+        utc_now = datetime.now(timezone.utc)
+        end_dt = datetime(utc_now.year, utc_now.month, utc_now.day)
+    else:
+        end_dt = datetime(end_dt.year, end_dt.month, end_dt.day)
+
+    if start_dt is None:
+        start_dt = end_dt - timedelta(days=max(1, IMS_LOOKBACK_DAYS))
+    else:
+        start_dt = datetime(start_dt.year, start_dt.month, start_dt.day)
+
+    if start_dt > end_dt:
+        raise ValueError("IMS weather range is invalid: start_dt is after end_dt.")
+
+    rows: list[list[str]] = []
+    for station_key, config in station_config.items():
+        station_id = config["station_id"]
+        td_data = _fetch_ims_station_metric(
+            token=token,
+            station_id=station_id,
+            channel_id=config["td_channel"],
+            metric_code="TD",
+            from_date=start_dt,
+            to_date=end_dt,
+        )
+        rh_data = _fetch_ims_station_metric(
+            token=token,
+            station_id=station_id,
+            channel_id=config["rh_channel"],
+            metric_code="RH",
+            from_date=start_dt,
+            to_date=end_dt,
+        )
+        common_timestamps = sorted(set(td_data.keys()) & set(rh_data.keys()))
+        for ts_utc in common_timestamps:
+            rows.append(
+                [
+                    IMS_STATION_OUTPUT[station_key],
+                    ts_utc.strftime("%d/%m/%Y %H:%M"),
+                    f"{rh_data[ts_utc]:g}",
+                    f"{td_data[ts_utc]:g}",
+                ]
+            )
+
+    if not rows:
+        raise ValueError("IMS API returned no overlapping TD/RH records for the selected stations.")
+
+    rows.sort(key=lambda item: (item[1], item[0]))
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(IMS_COLUMNS)
+    writer.writerows(rows)
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    meta = {
+        "source": IMS_STATIONS_URL,
+        "from": start_dt.strftime("%Y-%m-%d"),
+        "to": end_dt.strftime("%Y-%m-%d"),
+        "stations": {key: cfg["station_id"] for key, cfg in station_config.items()},
+        "records": len(rows),
+    }
+    return csv_bytes, meta
+
+
+def download_ims_weather_file(
+    start_dt: Optional[datetime] = None,
+    end_dt: Optional[datetime] = None,
+) -> tuple[Path, Dict[str, Any]]:
+    content, ims_meta = _build_ims_weather_csv_content_for_range(start_dt, end_dt)
+    dest = _save_downloaded_file(DataFileSource.IMS_HEAT_LOAD_WEATHER.value, content, "text/csv")
+    return dest, ims_meta
+
+
+def ensure_fresh_ims_weather_file(
+    start_dt: datetime,
+    end_dt: datetime,
+) -> Path:
+    existing_path = _latest_file(DataFileSource.IMS_HEAT_LOAD_WEATHER.value)
+    try:
+        dest, _ = download_ims_weather_file(start_dt, end_dt)
+        return dest
+    except Exception as exc:  # noqa: BLE001
+        if existing_path:
+            logger.warning(
+                "IMS range download failed, using existing weather file %s: %s",
+                existing_path.name,
+                exc,
+            )
+            return existing_path
+        raise
+
+
+async def download_csv(
+    dataset: str,
+    start_dt: Optional[datetime] = None,
+    end_dt: Optional[datetime] = None,
+) -> Dict:
     """
     Download the CSV for *dataset* from gov.il and save it to data_files/.
 
@@ -196,6 +622,33 @@ async def download_csv(dataset: str) -> Dict:
         }
 
     url = SOURCE_URLS[dataset]
+
+    if dataset == DataFileSource.IMS_HEAT_LOAD_WEATHER.value:
+        try:
+            dest, ims_meta = download_ims_weather_file(start_dt, end_dt)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "success": False,
+                "dataset": dataset,
+                "url": url,
+                "error": f"Failed to build IMS weather CSV: {exc}",
+            }
+
+        return {
+            "success": True,
+            "dataset": dataset,
+            "url": url,
+            "stored_as": dest.name,
+            "size_bytes": dest.stat().st_size,
+            "method": "ims_api",
+            "params": {
+                "from": ims_meta["from"],
+                "to": ims_meta["to"],
+                "stations": ims_meta["stations"],
+                "required_fields": IMS_COLUMNS,
+            },
+            "message": "IMS weather CSV downloaded and stored successfully.",
+        }
 
     # Use the core sync downloader first
     content, content_type, method_used, error_log = _download_bytes(url, dataset)
@@ -303,6 +756,23 @@ def _try_download_sync(dataset: str) -> Optional[Path]:
         return None
 
     url = SOURCE_URLS[dataset]
+
+    if dataset == DataFileSource.IMS_HEAT_LOAD_WEATHER.value:
+        try:
+            content, ims_meta = _build_ims_weather_csv_content()
+            dest = _save_downloaded_file(dataset, content, "text/csv")
+            logger.info(
+                "Auto-refresh: %s downloaded -> %s (%s to %s, %s records)",
+                dataset,
+                dest.name,
+                ims_meta["from"],
+                ims_meta["to"],
+                ims_meta["records"],
+            )
+            return dest
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Auto-refresh download failed for %s: %s", dataset, exc)
+            return None
 
     content, content_type, method_used, error_log = _download_bytes(url, dataset)
 

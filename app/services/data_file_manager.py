@@ -26,6 +26,7 @@ DATASET_BASE_NAMES = {
     DataFileSource.CONNECTED_FACILITIES.value: "Files_Netunei_hashmal_my_mehubarim",
     # Delivery 2 – Distributor responses (connection request approvals).
     DataFileSource.DISTRIBUTOR_RESPONSES.value: "Files_Netunei_hashmal_my_teshuvotmehalek",
+    DataFileSource.IMS_HEAT_LOAD_WEATHER.value: "IMS_heat_load_weather",
 }
 
 

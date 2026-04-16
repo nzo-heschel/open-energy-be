@@ -138,6 +138,7 @@ data_extractor.py
 data_files/
   diagram_sheet_1.csv                 # Delivery 4 Diagram 1 source
   diagram_sheet_2.csv                 # Delivery 4 Diagram 2 source
+  IMS_heat_load_weather_*.csv
   Files_Netunei_hashmal_mp_niyud_*.csv
   Files_Netunei_hashmal_mp_tzarchan_*.csv
   Files_Netunei_hashmal_my_mehubarim.csv
@@ -209,6 +210,7 @@ CO2_TOKEN
 SMP_TOKEN
 INTERNAL_API_KEY
 PROXY_URL
+IMS_TOKEN
 DELIVERY4_DIAGRAM1_CSV_PATH    # optional — override diagram_sheet_1.csv location
 DELIVERY4_DIAGRAM2_CSV_PATH    # optional — override diagram_sheet_2.csv location
 ```
@@ -1662,6 +1664,8 @@ PASS  EP 14 Export                                 5.9 KB Excel
 }
 ```
 
+When `HEAT_LOAD_CSV_PATH` is not set, the backend can generate the required weather CSV automatically from the IMS API using `IMS_TOKEN` and store it in `data_files/` as `IMS_heat_load_weather_*.csv`.
+
 ---
 
 #### `GET /api/v1/heat-load-vs-generation/export`
@@ -1682,7 +1686,7 @@ PASS  EP 14 Export                                 5.9 KB Excel
 
 #### `GET /api/v1/data-files/status`
 
-**Description:** Returns freshness status for both datasets (private_suppliers and switching_requests).
+**Description:** Returns freshness status for all managed datasets, including `ims_heat_load_weather`.
 
 **Response (200 OK):**
 
@@ -1699,6 +1703,12 @@ PASS  EP 14 Export                                 5.9 KB Excel
     "status": "fresh",
     "age_days": 0.00029118113425925926,
     "filename": "Files_Netunei_hashmal_mp_tzarchan_17-12-2025.csv"
+  },
+  "ims_heat_load_weather": {
+    "dataset": "ims_heat_load_weather",
+    "status": "fresh",
+    "age_days": 0.0012534722222222222,
+    "filename": "IMS_heat_load_weather_17-12-2025.csv"
   }
 }
 ```
@@ -1707,20 +1717,112 @@ PASS  EP 14 Export                                 5.9 KB Excel
 
 #### `POST /api/v1/data-files/upload`
 
-**Description:** Uploads a new data file for a specific source (`private_suppliers` or `switching_requests`).
+**Description:** Uploads a new data file for a specific source, including `ims_heat_load_weather`.
 
 **Request Body:**
 
-- `source`: `DataFileSource` (Enum: "private_suppliers" or "switching_requests")
+- `source`: `DataFileSource` (Enum: `private_suppliers`, `switching_requests`, `connected_facilities`, `distributor_responses`, `ims_heat_load_weather`)
 - `file`: `UploadFile`
 
 **Response (200 OK):**
 
 ```json
 {
-  "dataset": "private_suppliers",
+  "dataset": "ims_heat_load_weather",
   "stored_as": "some_file_name.csv",
   "message": "File uploaded. Re-run the target API to get the updated results."
+}
+```
+
+---
+
+#### `GET /api/v1/data-files/download-urls`
+
+**Description:** Lists backend download sources for all auto-fetch datasets, including the IMS weather source for heat load.
+
+**Response (200 OK):**
+
+```json
+{
+  "ims_heat_load_weather": {
+    "url": "https://api.ims.gov.il/v1/envista/stations",
+    "status": {
+      "dataset": "ims_heat_load_weather",
+      "status": "fresh",
+      "age_days": 0.0012534722222222222,
+      "filename": "IMS_heat_load_weather_17-12-2025.csv"
+    }
+  }
+}
+```
+
+---
+
+#### `POST /api/v1/data-files/fetch`
+
+**Description:** Downloads a CSV into `data_files/`. Supports Electricity Authority CSVs and `ims_heat_load_weather` via `IMS_TOKEN`.
+
+**Request Body:**
+
+- `source`: `string` (one of the downloadable sources, including `ims_heat_load_weather`)
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "dataset": "ims_heat_load_weather",
+  "stored_as": "IMS_heat_load_weather_17-12-2025.csv",
+  "path": "C:/project/data_files/IMS_heat_load_weather_17-12-2025.csv",
+  "method": "ims_api"
+}
+```
+
+---
+
+#### `POST /api/v1/data-files/fetch-ims-weather`
+
+**Description:** Downloads the IMS weather CSV required by the heat load endpoint using `IMS_TOKEN`.
+
+**Request Body:**
+
+- `start_date` (optional, YYYY-MM-DD)
+- `end_date` (optional, YYYY-MM-DD)
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "dataset": "ims_heat_load_weather",
+  "stored_as": "IMS_heat_load_weather_17-12-2025.csv",
+  "path": "C:/project/data_files/IMS_heat_load_weather_17-12-2025.csv",
+  "method": "ims_api"
+}
+```
+
+---
+
+#### `POST /api/v1/data-files/fetch-all`
+
+**Description:** Downloads all configured CSV datasets in one call, including the IMS weather CSV for heat load.
+
+**Response (200 OK):**
+
+```json
+{
+  "overall": "all_success",
+  "datasets": {
+    "ims_heat_load_weather": {
+      "success": true,
+      "dataset": "ims_heat_load_weather",
+      "stored_as": "IMS_heat_load_weather_17-12-2025.csv",
+      "path": "C:/project/data_files/IMS_heat_load_weather_17-12-2025.csv",
+      "method": "ims_api"
+    }
+  }
 }
 ```
 
@@ -2253,6 +2355,6 @@ docker-compose up -d
 
 ### Environment Configuration for Production
 
-- Set actual `NOGA_API_TOKEN`, `CO2_TOKEN`, `PROXY_URL`, `INTERNAL_API_KEY`, `SMP_TOKEN`
+- Set actual `NOGA_API_TOKEN`, `CO2_TOKEN`, `PROXY_URL`, `INTERNAL_API_KEY`, `SMP_TOKEN`, `IMS_TOKEN`
 
 ---
