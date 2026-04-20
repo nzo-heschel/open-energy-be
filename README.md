@@ -2358,3 +2358,4 @@ docker-compose up -d
 - Set actual `NOGA_API_TOKEN`, `CO2_TOKEN`, `PROXY_URL`, `INTERNAL_API_KEY`, `SMP_TOKEN`, `IMS_TOKEN`
 
 ---
+
