@@ -22,6 +22,7 @@ async def get_renewable_production_mix(
     """
     Delivery 2 - Item 1: Renewable energy production mix (solar, wind, biogas).
     Supports category filter: solar | wind | other.
+    No year filter — use start_date and end_date for date range filtering.
     """
     category_filter = None
     if category:

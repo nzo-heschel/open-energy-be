@@ -1,8 +1,11 @@
 # app/services/noga_co2_service.py
+import logging
 import os
 import time
 from typing import Any, Dict, List, Tuple, Optional
 import httpx
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://apim-api.noga-iso.co.il/"
 CO2_PATH = "CO2/CO2aPI/v1"
@@ -66,6 +69,28 @@ class NogaCO2Service:
 
     @staticmethod
     async def fetch_co2_data(from_date: str, to_date: str, subscription_key: Optional[str] = None) -> List[Dict]:
+        """Fetch CO2 data from NOGA API with NZO fallback."""
+        try:
+            return await NogaCO2Service._fetch_from_noga(from_date, to_date, subscription_key)
+        except Exception as noga_exc:
+            logger.warning("NOGA CO2 API failed, trying NZO fallback: %s", noga_exc)
+            try:
+                from app.services.nzo_fallback_service import NZOFallbackService
+                return await NZOFallbackService.fetch_co2_data(
+                    start_date=from_date,
+                    end_date=to_date,
+                    time_resolution="hour",
+                )
+            except Exception as nzo_exc:
+                logger.error("NZO CO2 fallback also failed: %s", nzo_exc)
+                raise Exception(
+                    f"Both NOGA CO2 API and NZO fallback failed. "
+                    f"NOGA: {noga_exc}. NZO: {nzo_exc}"
+                ) from nzo_exc
+
+    @staticmethod
+    async def _fetch_from_noga(from_date: str, to_date: str, subscription_key: Optional[str] = None) -> List[Dict]:
+        """Original NOGA CO2 fetch logic."""
         tokens_to_try = NogaCO2Service._build_tokens_to_try(subscription_key)
         if not tokens_to_try:
             raise Exception("No CO2 token configured. Set CO2_TOKEN in .env")

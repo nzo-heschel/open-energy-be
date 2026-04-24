@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, List
 
@@ -9,6 +10,8 @@ import requests
 from fastapi import HTTPException
 from requests.exceptions import ChunkedEncodingError
 from urllib3.exceptions import ProtocolError
+
+logger = logging.getLogger(__name__)
 
 # Proxy helpers disabled while running without a proxy/VPN.
 # from app.config import (
@@ -24,10 +27,46 @@ class NogaService:
     @staticmethod
     async def fetch_production_mix(start: str, end: str, token: str) -> List[Dict]:
         """
-        Fetch production mix from NOGA API.
+        Fetch production mix from NOGA API with NZO fallback.
         start, end: 'dd-mm-yyyy'
         token: NOGA API token
         """
+        # Try NOGA first, fall back to NZO if NOGA fails
+        try:
+            return await NogaService._fetch_from_noga(start, end, token)
+        except Exception as noga_exc:
+            logger.warning("NOGA API failed, trying NZO fallback: %s", noga_exc)
+            try:
+                return await NogaService._fetch_from_nzo(start, end)
+            except Exception as nzo_exc:
+                logger.error("NZO fallback also failed: %s", nzo_exc)
+                # Re-raise the original NOGA error with note about NZO
+                raise HTTPException(
+                    status_code=424,
+                    detail=(
+                        f"Both NOGA API and NZO fallback failed. "
+                        f"NOGA: {noga_exc}. NZO: {nzo_exc}"
+                    ),
+                ) from nzo_exc
+
+    @staticmethod
+    async def _fetch_from_nzo(start: str, end: str) -> List[Dict]:
+        """Fetch from NZO fallback service using hourly resolution for speed.
+
+        Using time=hour returns 24 records/day instead of 288 (time=all).
+        The values are the sum of 12 five-minute MW readings per hour.
+        Dividing by 12 still gives correct MWh per hour.
+        """
+        from app.services.nzo_fallback_service import NZOFallbackService
+        return await NZOFallbackService.fetch_energy_data(
+            start_date=start,
+            end_date=end,
+            time_resolution="hour",
+        )
+
+    @staticmethod
+    async def _fetch_from_noga(start: str, end: str, token: str) -> List[Dict]:
+        """Original NOGA API fetch logic."""
         # configure_global_proxy()
         path = "PRODUCTIONMIX/PRODMIXAPI/v1"
         headers = {
@@ -58,13 +97,13 @@ class NogaService:
         def _do_request(range_start: str, range_end: str, stream: bool = True) -> Dict:
             payload = {"fromDate": range_start, "toDate": range_end}
             last_exc = None
-            for attempt in range(3):
+            for attempt in range(1):  # single attempt — fail fast to NZO fallback
                 try:
                     resp = requests.post(
                         url,
                         headers=headers,
                         json=payload,
-                        timeout=(10, 90),  # connect, read
+                        timeout=(5, 15),  # connect 5s, read 15s — fast fail
                         # proxies=proxies,
                         # auth=proxy_auth,
                         stream=stream,  # avoid early full download

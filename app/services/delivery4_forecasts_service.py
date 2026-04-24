@@ -45,8 +45,9 @@ def _read_diagram1_csv(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, str]
         return [], {}, None
 
     year_col = df.columns[0]
-    # Source sheet contains english labels in row index 2.
-    english_row = df.iloc[2] if len(df) > 2 else pd.Series(dtype=object)
+    # Source sheet contains English labels in row index 1 after pandas uses the
+    # first CSV line as column headers.
+    english_row = df.iloc[1] if len(df) > 1 else pd.Series(dtype=object)
     columns = list(df.columns)
 
     renewable_col = columns[1] if len(columns) > 1 else None
@@ -119,7 +120,9 @@ def _read_diagram2_csv(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, str]
         return [], {}, []
 
     columns = list(df.columns)
-    label_row = df.iloc[1] if len(df) > 1 else pd.Series(dtype=object)
+    # Source sheet contains English labels in row index 0 after pandas uses the
+    # first CSV line as column headers.
+    label_row = df.iloc[0] if len(df) > 0 else pd.Series(dtype=object)
 
     region_en_col = columns[0]
     region_he_col = columns[1] if len(columns) > 1 else None
@@ -199,7 +202,7 @@ def _validation_notes(
     regions: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
-    PRD: solar share should be <= renewable share; we compare 2025 solar to 2030 renewable target
+    PRD: solar share should be <= renewable share; we compare 2024 solar to 2030 renewable target
     as a sanity check (same order of magnitude for the chart).
     """
     notes: List[Dict[str, Any]] = []
@@ -233,14 +236,21 @@ class Delivery4ForecastsService:
 
         points, labels, realistic_factor = _read_diagram1_csv(path)
         return {
+            "diagram_id": "delivery_4_diagram_1",
             "title": "Renewables forecast trajectory in Israel",
             "title_he": "תחזית שיעור אנרגיות מתחדשות בישראל",
             "value_unit": "fraction",
+            "series_labels": labels,
             "data": points,
             "metadata": {
                 "year_start": points[0]["year"] if points else None,
                 "year_end": points[-1]["year"] if points else None,
                 "realistic_forecast_factor": realistic_factor,
+            },
+            "source": {
+                "csv_path": str(path),
+                "encoding": "utf-8-sig",
+                "source_type": "CSV snapshot",
             },
         }
 
@@ -284,10 +294,25 @@ class Delivery4ForecastsService:
             regions.append(entry)
 
         return {
-            "title": "Renewables — targets vs actual (international comparison)",
+            "diagram_id": "delivery_4_diagram_2",
+            "title": "Renewables - targets vs actual (international comparison)",
             "title_he": "אנרגיות מתחדשות יעדים מול ייצור בפועל",
             "value_unit": "fraction",
+            "series_labels": column_labels_from_sheet,
+            "filters": {
+                "include_2030_targets": True,
+                "include_2050_targets": include_2050_targets,
+                "include_solar_share": include_solar_share,
+            },
             "regions": regions,
+            "regions_without_solar_data": missing_solar,
+            "validation": validation,
+            "source": {
+                "csv_path": str(path),
+                "encoding": "utf-8-sig",
+                "source_type": "CSV snapshot",
+                "source_notes": source_notes,
+            },
         }
 
     @staticmethod

@@ -11,7 +11,7 @@ class RenewablePotentialIndustryService:
     """
     Delivery 2 - Row 3:
     Potential renewable energy production by industry type (here: solar, wind, biogas),
-    aggregated daily for a selected year. Calculation: each 5-minute sample (MW) is
+    aggregated daily for a selected date range. Calculation: each 5-minute sample (MW) is
     converted to energy (MWh) by dividing by 12, then summed per day.
     """
 
@@ -83,18 +83,14 @@ class RenewablePotentialIndustryService:
         return series, totals
 
     @staticmethod
-    async def get_potential(year: int, token: str | None = None) -> Dict:
+    async def get_potential(
+        start_dt: datetime,
+        end_dt: datetime,
+        token: str | None = None,
+    ) -> Dict:
         """
-        Fetch and aggregate daily renewable potential by industry type for the given year.
+        Fetch and aggregate daily renewable potential by industry type for the given date range.
         """
-        today = datetime.today()
-        start_dt = datetime(year=year, month=1, day=1)
-        end_dt = (
-            today
-            if year == today.year
-            else datetime(year=year, month=12, day=31, hour=23, minute=59, second=59)
-        )
-
         api_token = token or os.getenv("NOGA_API_TOKEN")
         raw = await NogaService.fetch_production_mix(
             to_noga_date(start_dt),
@@ -105,12 +101,13 @@ class RenewablePotentialIndustryService:
         series, totals = RenewablePotentialIndustryService._aggregate_daily(raw, start_dt, end_dt)
 
         return {
-            "year": year,
             "start_date": to_iso_date(start_dt),
             "end_date": to_iso_date(end_dt),
-            "filter": "year",
+            "filter": "date_range",
             "series": series,
             "totals": totals,
+            "unit": "MWh",
+            "y_axis_label": "[MWh]",
             "energy_types": {
                 "solar": "Photovoltaic + solar-thermal + photovoltaic with storage (MWh).",
                 "wind": "Wind generation (MWh).",
@@ -119,9 +116,13 @@ class RenewablePotentialIndustryService:
             "tooltip": (
                 "Renewable production potential by industry type (solar, wind, biogas). "
                 "Each 5-minute NOGA sample (MW) is converted to energy (MWh) by dividing by 12, "
-                "then summed for each day of the selected year."
+                "then summed for each day of the selected date range."
             ),
-            "source": "NOGA renewable generation API (5-minute sampling).",
+            "source": "NOGA renewable generation API (5-minute sampling) with NZO fallback.",
+            "data_availability_note": (
+                "NOGA/NZO data is available from 2024 onwards. "
+                "Data for 2021, 2022, and 2023 is not available in the source."
+            ),
         }
 
     @staticmethod

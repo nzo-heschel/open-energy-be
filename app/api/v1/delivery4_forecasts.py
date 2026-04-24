@@ -74,7 +74,7 @@ async def get_international_renewable_comparison(
     ),
     include_solar_share: bool = Query(
         default=True,
-        description="Include 2025 solar share series (PRD toggle).",
+        description="Include 2024 solar share series (PRD toggle).",
     ),
 ):
     """

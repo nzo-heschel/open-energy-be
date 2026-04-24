@@ -165,13 +165,53 @@ class RenewableMixService:
             category_filter=category_filter,
         )
 
-        return {
+        # For multi-year ranges, also provide per-month breakdown
+        monthly_series = None
+        if view == "year":
+            _, monthly_data = RenewableMixService._aggregate_samples(
+                raw, start_dt, end_dt, "month", category_filter=category_filter,
+            )
+            # Build monthly series for year view
+            monthly_buckets: Dict[str, Dict] = {}
+            for sample in raw:
+                ts = RenewableMixService._parse_timestamp(sample)
+                if not ts:
+                    continue
+                if ts < start_dt or ts > end_dt + timedelta(seconds=59):
+                    continue
+                sort_key, label = RenewableMixService._bucket_key(ts, "month")
+                energy = RenewableMixService._sample_energy(sample, category_filter)
+                if label not in monthly_buckets:
+                    monthly_buckets[label] = {
+                        "solar": 0.0, "wind": 0.0, "other": 0.0, "total": 0.0,
+                        "_sort_key": sort_key,
+                    }
+                bucket = monthly_buckets[label]
+                bucket["solar"] += energy["solar"]
+                bucket["wind"] += energy["wind"]
+                bucket["other"] += energy["other"]
+                bucket["total"] += energy["total"]
+
+            monthly_series = []
+            for label in sorted(monthly_buckets.keys()):
+                bucket = monthly_buckets[label]
+                monthly_series.append({
+                    "period": label,
+                    "solar_mwh": round(bucket["solar"], 2),
+                    "wind_mwh": round(bucket["wind"], 2),
+                    "other_mwh": round(bucket["other"], 2),
+                    "total_mwh": round(bucket["total"], 2),
+                })
+
+        result = {
             "start_date": to_iso_date(start_dt),
             "end_date": to_iso_date(end_dt),
             "filter": view,
             "category_filter": category_filter,
             "series": series,
             "totals": totals,
+            "unit": "MWh",
+            "y_axis_label": "[MWh]",
             "energy_types": {
                 "solar": "Photovoltaic + solar-thermal + photovoltaic with storage (MWh).",
                 "wind": "Wind generation (MWh).",
@@ -181,8 +221,18 @@ class RenewableMixService:
                 "Renewable energy production mix showing solar, wind, and biogas generation. "
                 "Values are converted from 5-minute samples (MW) to energy (MWh) by dividing each sample by 12, "
                 "then summing by day, month, or year depending on the selected filter."
-            )
+            ),
+            "data_availability_note": (
+                "NOGA/NZO data is available from 2024 onwards. "
+                "Data for 2021, 2022, and 2023 is not available in the source."
+            ),
         }
+
+        # Include monthly breakdown when viewing by year (Issue #3)
+        if monthly_series is not None:
+            result["monthly_series"] = monthly_series
+
+        return result
 
     @staticmethod
     def to_excel(series: List[Dict], totals: Dict) -> bytes:
