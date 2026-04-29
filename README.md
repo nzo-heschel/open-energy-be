@@ -156,7 +156,7 @@ requirements.txt
 
 Delivery 2-specific datasets are tracked in `Delivery 2 Sources/` (raw snapshots) and copied into `data_files/` before the application starts; `app/services/data_file_manager.py` tags each cache entry so `connected_facilities_service` and `distributor_responses_service` can build the Excel exports and REST responses.
 
-Delivery 4 source CSVs (`diagram_sheet_1.csv`, `diagram_sheet_2.csv`) live directly in `data_files/` and are read at request time by `delivery4_forecasts_service.py`. Override paths with env vars `DELIVERY4_DIAGRAM1_CSV_PATH` and `DELIVERY4_DIAGRAM2_CSV_PATH` if needed.
+Delivery 4 source CSVs (`diagram_sheet_1.csv`, `diagram_sheet_2.csv`) live directly in `data_files/` and are read at request time by `delivery4_forecasts_service.py`.
 
 ---
 
@@ -211,8 +211,6 @@ SMP_TOKEN
 INTERNAL_API_KEY
 PROXY_URL
 IMS_TOKEN
-DELIVERY4_DIAGRAM1_CSV_PATH    # optional — override diagram_sheet_1.csv location
-DELIVERY4_DIAGRAM2_CSV_PATH    # optional — override diagram_sheet_2.csv location
 ```
 
 **Using with Docker:**
@@ -1924,28 +1922,27 @@ Delivery 4 exposes two diagrams from the PRD section "תחזיות והשווא�
 
 ### Route Prefixes
 
-The router is mounted at three prefixes for backwards compatibility:
+Public docs show the clean renewables prefix. Legacy aliases remain hidden from the schema.
 
 | Prefix | Schema Visibility |
 |---|---|
-| `/api/v1/renewables/delivery-4/` | **Primary** (shown in docs) |
-| `/api/v1/renewables/` | Alias (hidden from schema) |
-| `/api/v1/forecasts/` | Alias (hidden from schema) |
+| `/api/v1/renewables/` | **Primary** (shown in docs) |
+| `/api/v1/forecasts/` | Legacy alias (hidden from schema) |
 
 ---
 
 #### Diagram 1: Israel Renewable Forecast Trajectory
 
-##### GET /api/v1/renewables/delivery-4/renewable-forecast-israel
+##### GET /api/v1/renewables/renewable-forecast-israel
 
 - **Router:** `app/api/v1/delivery4_forecasts.py`
 - **Service:** `app/services/delivery4_forecasts_service.py`
-- **Data Source:** `data_files/diagram_sheet_1.csv` (override with env var `DELIVERY4_DIAGRAM1_CSV_PATH`)
-- **Export:** `GET /api/v1/renewables/delivery-4/renewable-forecast-israel/export`
+- **Data Source:** `data_files/diagram_sheet_1.csv`
+- **Export:** `GET /api/v1/renewables/renewable-forecast-israel/export`
 
-**Description:** Returns the yearly Israel renewable forecast trajectory from 2020 to 2050 with four series: actual renewable rate (column bar), realistic forecast (line), Ministry of Energy target (line), and NZO target (line). Values are fractions 0–1 (multiply by 100 for percent).
+**Description:** Returns the yearly Israel renewable forecast trajectory from 2020 to 2050 with four series: actual renewable share, realistic forecast, Ministry of Energy target, and NZO target. Values are percentages.
 
-**Graph Type:** Column bar chart (renewable rate) + 3 line graphs (realistic forecast, Ministry of Energy target, NZO target).
+**Graph Type:** Column bar chart (renewable share) + 3 line graphs (realistic forecast, Ministry of Energy target, NZO target).
 
 **Response (200 OK):**
 
@@ -1953,90 +1950,89 @@ The router is mounted at three prefixes for backwards compatibility:
 {
     "title": "Renewables forecast trajectory in Israel",
     "title_he": "תחזית שיעור אנרגיות מתחדשות בישראל",
-    "value_unit": "fraction",
-    "value_unit_description": "All numeric values are fractions in [0, 1]; multiply by 100 for percent.",
+    "value_unit": "percent",
     "series_labels": {
-        "renewable_rate": "Renewable rate",
-        "realistic_forecast": "Realistic forecast",
-        "ministry_target": "Ministry of Energy target",
-        "nzo_target": "NZO target"
+        "renewable_share_percent": "Renewable share (%)",
+        "realistic_forecast_percent": "Realistic forecast (%)",
+        "ministry_target_percent": "Ministry of Energy target (%)",
+        "nzo_target_percent": "NZO target (%)"
     },
     "data": [
         {
             "year": 2020,
-            "renewable_rate": 0.063,
-            "realistic_forecast": 0.063,
-            "ministry_target": 0.1,
-            "nzo_target": 0.275
+            "renewable_share_percent": 6.3,
+            "realistic_forecast_percent": 6.3,
+            "ministry_target_percent": 10,
+            "nzo_target_percent": 27.5
         },
         {
             "year": 2021,
-            "renewable_rate": 0.082,
-            "realistic_forecast": 0.082,
-            "ministry_target": 0.12,
-            "nzo_target": 0.298
+            "renewable_share_percent": 8.2,
+            "realistic_forecast_percent": 8.2,
+            "ministry_target_percent": 12,
+            "nzo_target_percent": 29.8
         },
         {
             "year": 2024,
-            "renewable_rate": 0.146,
-            "realistic_forecast": 0.146,
-            "ministry_target": 0.18,
-            "nzo_target": 0.365
+            "renewable_share_percent": 14.6,
+            "realistic_forecast_percent": 14.6,
+            "ministry_target_percent": 18,
+            "nzo_target_percent": 36.5
         },
         {
             "year": 2030,
-            "renewable_rate": 0.0,
-            "realistic_forecast": 0.274,
-            "ministry_target": 0.3,
-            "nzo_target": 0.5
+            "renewable_share_percent": 0.0,
+            "realistic_forecast_percent": 27.4,
+            "ministry_target_percent": 30,
+            "nzo_target_percent": 50
         },
         {
             "year": 2050,
-            "renewable_rate": 0.0,
-            "realistic_forecast": 0.7006666667,
-            "ministry_target": 0.7,
-            "nzo_target": 0.95
+            "renewable_share_percent": 0.0,
+            "realistic_forecast_percent": 70.06666667,
+            "ministry_target_percent": 70,
+            "nzo_target_percent": 95
         }
     ],
     "metadata": {
         "year_start": 2020,
         "year_end": 2050,
-        "realistic_forecast_factor": 0.02133333333
+        "realistic_forecast_factor_percent": 2.133333333
     },
     "source": {
-        "csv_path": "/absolute/path/to/data_files/diagram_sheet_1.csv"
+        "file_name": "diagram_sheet_1.csv"
     }
 }
 ```
 
 **Notes:**
-- `renewable_rate` is 0.0 for future years (2025+) where actuals are not yet available.
-- `realistic_forecast` is calculated using the factor shown in `metadata.realistic_forecast_factor`.
+- `renewable_share_percent` is 0.0 for future years (2025+) where actuals are not yet available.
+- `realistic_forecast_percent` is calculated using the factor shown in `metadata.realistic_forecast_factor_percent`.
 - Full response contains 31 data points (2020–2050); sample above is truncated for brevity.
 
 ---
 
-##### GET /api/v1/renewables/delivery-4/renewable-forecast-israel/export
+##### GET /api/v1/renewables/renewable-forecast-israel/export
 
 **Description:** Export Diagram 1 to Excel
 
-**Response:** Streamed Excel file (`delivery4_diagram1_renewable_forecast_israel.xlsx`) with three sheets:
-- **Diagram 1 data** — year, renewable_rate, realistic_forecast, ministry_target, nzo_target
+**Response:** Streamed Excel file (`renewable_forecast_israel.xlsx`) with three sheets:
+- **Diagram 1 data** — year, renewable_share_percent, realistic_forecast_percent, ministry_target_percent, nzo_target_percent
 - **Series labels** — human-readable labels for each series key
-- **Meta** — diagram ID, titles, value unit, year range, forecast factor, source CSV path
+- **Meta** — diagram ID, titles, value unit, year range, forecast factor, source file
 
 ---
 
 #### Diagram 2: International Renewable Comparison
 
-##### GET /api/v1/renewables/delivery-4/international-renewable-comparison
+##### GET /api/v1/renewables/international-renewable-comparison
 
 - **Router:** `app/api/v1/delivery4_forecasts.py`
 - **Service:** `app/services/delivery4_forecasts_service.py`
-- **Data Source:** `data_files/diagram_sheet_2.csv` (override with env var `DELIVERY4_DIAGRAM2_CSV_PATH`)
-- **Export:** `GET /api/v1/renewables/delivery-4/international-renewable-comparison/export`
+- **Data Source:** `data_files/diagram_sheet_2.csv`
+- **Export:** `GET /api/v1/renewables/international-renewable-comparison/export`
 
-**Description:** Returns a horizontal bar comparison of countries/regions showing 2024 solar share, 2030 renewable target, and 2050 renewable target. Values are fractions 0–1.
+**Description:** Returns a horizontal bar comparison of countries/regions showing 2024 solar share, 2030 renewable target, and 2050 renewable target. Values are percentages.
 
 **Query Parameters:**
 
@@ -2047,26 +2043,25 @@ The router is mounted at three prefixes for backwards compatibility:
 
 ```json
 {
-    "diagram_id": "delivery_4_diagram_2",
+    "diagram_id": "international_renewable_comparison",
     "title": "Renewables — targets vs actual (international comparison)",
     "title_he": "אנרגיות מתחדשות יעדים מול ייצור בפועל",
-    "value_unit": "fraction",
-    "value_unit_description": "All numeric values are fractions in [0, 1]; multiply by 100 for percent.",
+    "value_unit": "percent",
     "filters": {
         "include_2030_targets": true,
         "include_2050_targets": true,
         "include_solar_share": true
     },
-    "column_labels": {
-        "solar_share_2024": {
+    "series_labels": {
+        "solar_share_percent_2024": {
             "en": "2024 Solar Share",
             "he": "שיעור ייצור סולארי (2024)"
         },
-        "renewable_target_2030": {
+        "renewable_target_percent_2030": {
             "en": "2030 renewable target",
             "he": "יעד אנרגיות מתחדשות 2030"
         },
-        "renewable_target_2050": {
+        "renewable_target_percent_2050": {
             "en": "2050 renewable target",
             "he": "יעד אנרגיות מתחדשות 2050"
         }
@@ -2076,55 +2071,55 @@ The router is mounted at three prefixes for backwards compatibility:
             "region": "Israel",
             "region_he": "ישראל",
             "region_key": "israel",
-            "renewable_target_2030": 0.3,
-            "solar_share_2024": 0.146,
-            "renewable_target_2050": 0.77
+            "renewable_target_percent_2030": 30,
+            "solar_share_percent_2024": 14.6,
+            "renewable_target_percent_2050": 77
         },
         {
             "region": "Germany",
             "region_he": "גרמניה",
             "region_key": "germany",
-            "renewable_target_2030": 0.8,
-            "solar_share_2024": 0.146,
-            "renewable_target_2050": 1.0
+            "renewable_target_percent_2030": 80,
+            "solar_share_percent_2024": 14.6,
+            "renewable_target_percent_2050": 100
         },
         {
             "region": "Spain",
             "region_he": "ספרד",
             "region_key": "spain",
-            "renewable_target_2030": 0.81,
-            "solar_share_2024": 0.187,
-            "renewable_target_2050": 1.0
+            "renewable_target_percent_2030": 81,
+            "solar_share_percent_2024": 18.7,
+            "renewable_target_percent_2050": 100
         },
         {
             "region": "Italy",
             "region_he": "איטליה",
             "region_key": "italy",
-            "renewable_target_2030": 0.55,
-            "solar_share_2024": 0.133,
-            "renewable_target_2050": 1.0
+            "renewable_target_percent_2030": 55,
+            "solar_share_percent_2024": 13.3,
+            "renewable_target_percent_2050": 100
         },
         {
             "region": "Greece",
             "region_he": "יוון",
             "region_key": "greece",
-            "renewable_target_2030": 0.75,
-            "solar_share_2024": 0.174,
-            "renewable_target_2050": 1.0
+            "renewable_target_percent_2030": 75,
+            "solar_share_percent_2024": 17.4,
+            "renewable_target_percent_2050": 100
         },
         {
             "region": "California",
             "region_he": "קליפורניה",
             "region_key": "california",
-            "renewable_target_2030": 0.5,
-            "solar_share_2024": 0.234,
-            "renewable_target_2050": 1.0
+            "renewable_target_percent_2030": 50,
+            "solar_share_percent_2024": 23.4,
+            "renewable_target_percent_2050": 100
         }
     ],
     "regions_without_solar_data": [],
     "validation": [],
     "source": {
-        "csv_path": "/absolute/path/to/data_files/diagram_sheet_2.csv",
+        "file_name": "diagram_sheet_2.csv",
         "source_notes": [
             "Sources: IEA",
             "Spanish NECP 2021 - 2030",
@@ -2132,10 +2127,6 @@ The router is mounted at three prefixes for backwards compatibility:
             "California Energy Commission",
             "Israeli Electricity Authority & Ministry of Energy"
         ]
-    },
-    "prd_notes": {
-        "filter_2030_mandatory": true,
-        "solar_not_published": "When the solar filter is on, list `regions_without_solar_data` beside the chart (PRD: countries without solar data)."
     }
 }
 ```
@@ -2148,7 +2139,7 @@ The router is mounted at three prefixes for backwards compatibility:
 
 ---
 
-##### GET /api/v1/renewables/delivery-4/international-renewable-comparison/export
+##### GET /api/v1/renewables/international-renewable-comparison/export
 
 **Description:** Export Diagram 2 to Excel
 
@@ -2157,9 +2148,9 @@ The router is mounted at three prefixes for backwards compatibility:
 - `include_2050_targets` (optional, bool, default `true`)
 - `include_solar_share` (optional, bool, default `true`)
 
-**Response:** Streamed Excel file (`delivery4_diagram2_international_renewable_comparison.xlsx`) with up to four sheets:
-- **Diagram 2 data** — region, region_key, solar_share_2024, renewable_target_2030, renewable_target_2050
-- **Meta** — diagram ID, titles, value unit, filter state, source CSV path
+**Response:** Streamed Excel file (`international_renewable_comparison.xlsx`) with up to four sheets:
+- **Diagram 2 data** — region, region_key, solar_share_percent_2024, renewable_target_percent_2030, renewable_target_percent_2050
+- **Meta** — diagram ID, titles, value unit, filter state, source file
 - **Sources** — reference citations from the data sheet
 - **No solar data** — regions missing solar data (only present when the solar filter is on and gaps exist)
 
@@ -2174,9 +2165,8 @@ The router is mounted at three prefixes for backwards compatibility:
 | **File** | `data_files/diagram_sheet_1.csv` |
 | **Encoding** | `utf-8-sig` |
 | **Records** | 31 yearly rows (2020–2050) + header/label rows |
-| **Key Columns** | Year, שיעור מתחדשות (Renewable rate), צפי ריאלי (Realistic forecast), יעדי משרד האנרגיה (Ministry target), יעדי NZO (NZO target), פקטור צפי ריאלי (Factor) |
+| **Key Columns** | Year, Renewable share (%), Realistic forecast (%), Ministry target (%), NZO target (%), Factor (%) |
 | **Service** | `app/services/delivery4_forecasts_service.py` → `get_israel_forecast()` |
-| **Env Override** | `DELIVERY4_DIAGRAM1_CSV_PATH` |
 
 #### Source 2: Diagram 2 CSV — International Comparison
 
@@ -2187,7 +2177,6 @@ The router is mounted at three prefixes for backwards compatibility:
 | **Records** | 6 country/region rows + header/label/source rows |
 | **Key Columns** | Region (EN), Region (HE), שיעור הייצור הסולארי בשנת 2024 (Solar share 2024), יעד אנרגיה מתחדשת לשנת 2030 (2030 target), יעד אנרגיה מתחדשת לשנת 2050 (2050 target) |
 | **Service** | `app/services/delivery4_forecasts_service.py` → `get_international_comparison()` |
-| **Env Override** | `DELIVERY4_DIAGRAM2_CSV_PATH` |
 
 ### Postman & Verification
 

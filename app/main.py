@@ -112,12 +112,15 @@ app.include_router(heat_load_vs_generation.router, prefix="/api/v1")
 # Delivery 2 – Connected Facilities & Distributor Responses
 app.include_router(installed_capacity.router, prefix="/api/v1")
 app.include_router(response_capacity.router, prefix="/api/v1")
-# Delivery 4 – Diagram 1 + Diagram 2. The delivery-4 renewables path is primary;
-# the shorter renewables path and old /forecasts path stay as compatibility aliases.
-app.include_router(delivery4_forecasts.router, prefix="/api/v1/renewables/delivery-4")
+# Delivery 4 – Diagram 1 + Diagram 2. Public URLs use the clean renewables path;
+# development-era and legacy prefixes stay available as hidden compatibility aliases.
 app.include_router(
     delivery4_forecasts.router,
     prefix="/api/v1/renewables",
+)
+app.include_router(
+    delivery4_forecasts.router,
+    prefix="/api/v1/renewables/delivery-4",
     include_in_schema=False,
 )
 app.include_router(

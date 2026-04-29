@@ -1,15 +1,14 @@
 # app/api/v1/delivery4_forecasts.py
-"""
-Delivery 4 — Diagram 1 and Diagram 2 forecast endpoints.
-"""
+"""Renewable forecast and international comparison endpoints."""
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.services.delivery4_forecasts_service import Delivery4ForecastsService
 
-# Paths are mounted in main.py (no router prefix here) so Delivery 4 can share the
-# renewable namespace while keeping backwards-compatible aliases.
-router = APIRouter(tags=["Delivery 4 — Forecasts"])
+# Paths are mounted in main.py so these endpoints can use the public renewables
+# namespace while keeping hidden backwards-compatible aliases.
+router = APIRouter(tags=["Renewable Forecasts"])
 
 
 def _get_payload(include_2050_targets: bool, include_solar_share: bool):
@@ -23,17 +22,16 @@ def _get_payload(include_2050_targets: bool, include_solar_share: bool):
     except Exception as exc:
         raise HTTPException(
             status_code=424,
-            detail=f"Failed to load Delivery 4 diagram 2: {exc}",
+            detail=f"Failed to load international renewable comparison: {exc}",
         ) from exc
 
 
 @router.get("/renewable-forecast-israel")
 async def get_renewable_forecast_israel():
     """
-    **Delivery 4 — Diagram 1** — Israel renewable trajectory and targets.
+    Israel renewable share forecast and targets.
 
-    - Data file: `data_files/diagram_sheet_1.csv` (override with `DELIVERY4_DIAGRAM1_CSV_PATH`).
-    - Values are **fractions 0–1** (not percent points).
+    Values are percentages.
     """
     try:
         return Delivery4ForecastsService.get_israel_forecast()
@@ -42,13 +40,13 @@ async def get_renewable_forecast_israel():
     except Exception as exc:
         raise HTTPException(
             status_code=424,
-            detail=f"Failed to load Delivery 4 diagram 1: {exc}",
+            detail=f"Failed to load Israel renewable forecast: {exc}",
         ) from exc
 
 
 @router.get("/renewable-forecast-israel/export")
 async def export_renewable_forecast_israel():
-    """Excel export for Diagram 1: data, labels, and metadata."""
+    """Excel export for Israel renewable forecast data."""
     try:
         payload = Delivery4ForecastsService.get_israel_forecast()
         contents = Delivery4ForecastsService.to_excel_diagram1(payload)
@@ -60,9 +58,7 @@ async def export_renewable_forecast_israel():
     return StreamingResponse(
         iter([contents]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": "attachment; filename=delivery4_diagram1_renewable_forecast_israel.xlsx"
-        },
+        headers={"Content-Disposition": "attachment; filename=renewable_forecast_israel.xlsx"},
     )
 
 
@@ -70,20 +66,17 @@ async def export_renewable_forecast_israel():
 async def get_international_renewable_comparison(
     include_2050_targets: bool = Query(
         default=True,
-        description="Include 2050 renewable target series (PRD toggle). 2030 is always included.",
+        description="Include 2050 renewable target series. 2030 is always included.",
     ),
     include_solar_share: bool = Query(
         default=True,
-        description="Include 2024 solar share series (PRD toggle).",
+        description="Include 2024 solar share series.",
     ),
 ):
     """
-    **Delivery 4 — Diagram 2** — horizontal comparison by country/region.
+    International renewable share and target comparison by country/region.
 
-    - Data file: `data_files/diagram_sheet_2.csv` (override with `DELIVERY4_DIAGRAM2_CSV_PATH`).
-    - Values are **fractions 0–1** (not percent points).
-    - `regions_without_solar_data` lists areas with no published solar figure.
-    - `validation` flags unusual rows (e.g. solar share above 2030 renewable target).
+    Values are percentages.
     """
     return _get_payload(include_2050_targets, include_solar_share)
 
@@ -93,7 +86,7 @@ async def export_international_renewable_comparison(
     include_2050_targets: bool = Query(default=True),
     include_solar_share: bool = Query(default=True),
 ):
-    """Excel export: data sheet, meta (titles, filters, source note), and optional “No solar data” list."""
+    """Excel export for international renewable comparison data."""
     try:
         payload = _get_payload(include_2050_targets, include_solar_share)
         contents = Delivery4ForecastsService.to_excel_diagram2(payload)
@@ -105,7 +98,5 @@ async def export_international_renewable_comparison(
     return StreamingResponse(
         iter([contents]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": "attachment; filename=delivery4_diagram2_international_renewable_comparison.xlsx"
-        },
+        headers={"Content-Disposition": "attachment; filename=international_renewable_comparison.xlsx"},
     )

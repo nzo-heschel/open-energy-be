@@ -13,6 +13,8 @@ _ALLOWED_ENDPOINTS = {
     "/api/v1/energy/smp-production-vs-marginal-price",
     "/api/v1/private-supplier-connected-consumers",
     "/api/v1/switching-requests",
+    "/api/v1/renewables/renewable-forecast-israel",
+    "/api/v1/renewables/international-renewable-comparison",
 }
 
 
@@ -325,6 +327,58 @@ LEGACY_EXAMPLES: Dict[tuple[str, str], Dict[str, Any]] = {
             }
         ],
     },
+    ("/api/v1/renewables/renewable-forecast-israel", "GET"): {
+        "sample_response": ["200 OK"],
+        "sample_response_body": {
+            "diagram_id": "israel_renewable_forecast",
+            "title": "Renewables forecast trajectory in Israel",
+            "value_unit": "percent",
+            "series_labels": {
+                "renewable_share_percent": "Renewable share (%)",
+                "realistic_forecast_percent": "Realistic forecast (%)",
+                "ministry_target_percent": "Ministry of Energy target (%)",
+                "nzo_target_percent": "NZO target (%)",
+            },
+            "data": [
+                {
+                    "year": 2024,
+                    "renewable_share_percent": 14.6,
+                    "realistic_forecast_percent": 14.6,
+                    "ministry_target_percent": 18.0,
+                    "nzo_target_percent": 36.5,
+                }
+            ],
+            "metadata": {
+                "year_start": 2020,
+                "year_end": 2050,
+                "realistic_forecast_factor_percent": 2.133333333,
+            },
+        },
+    },
+    ("/api/v1/renewables/international-renewable-comparison", "GET"): {
+        "sample_response": ["200 OK"],
+        "sample_response_body": {
+            "diagram_id": "international_renewable_comparison",
+            "title": "Renewables - targets vs actual (international comparison)",
+            "value_unit": "percent",
+            "filters": {
+                "include_2030_targets": True,
+                "include_2050_targets": True,
+                "include_solar_share": True,
+            },
+            "regions": [
+                {
+                    "region": "Germany",
+                    "region_key": "germany",
+                    "solar_share_percent_2024": 14.6,
+                    "renewable_target_percent_2030": 80.0,
+                    "renewable_target_percent_2050": 100.0,
+                }
+            ],
+            "regions_without_solar_data": [],
+            "validation": [],
+        },
+    },
 }
 
 DESCRIPTIONS: Dict[str, str] = {
@@ -351,6 +405,14 @@ DESCRIPTIONS: Dict[str, str] = {
     "/api/v1/switching-requests": (
         "Consumer supplier switching requests split by status, customer type, regulation, competition type, and "
         "rejection reason, plus monthly totals; optional customer_type and year filters."
+    ),
+    "/api/v1/renewables/renewable-forecast-israel": (
+        "Israel renewable share forecast timeline with actual renewable share, realistic forecast, "
+        "Ministry of Energy targets, and NZO targets."
+    ),
+    "/api/v1/renewables/international-renewable-comparison": (
+        "International renewable comparison with 2030 targets, optional 2050 targets, "
+        "optional 2024 solar share, and a list of regions missing solar data."
     ),
 }
 
