@@ -5,6 +5,8 @@ from typing import Dict, List
 
 import httpx
 
+from app.services.noga_source_mode import use_nzo_fallback_only
+
 BASE_URL = "https://apim-api.noga-iso.co.il/"
 DEMAND_PATHS = [
     "DEMAND/DEMANDAPI/v1",
@@ -39,6 +41,9 @@ class DemandService:
         """
         Fetch demand data from the NOGA demand endpoint with short-term caching.
         """
+        if use_nzo_fallback_only():
+            return await DemandService._fetch_from_nzo(start, end)
+
         tokens_to_try: list[str] = []
         if token:
             tokens_to_try.append(token)

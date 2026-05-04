@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 from app.services.csv_downloader_service import ensure_fresh_ims_weather_file
 from app.services.noga_service import NogaService
+from app.services.noga_source_mode import use_nzo_fallback_only
 from app.services.nzo_fallback_service import NZO_TIME_RESOLUTION_FIELD
 from app.services.renewable_transition_service import TOTAL_GENERATION_KEYS
 from app.utils.date_utils import to_noga_date
@@ -189,7 +190,7 @@ class HeatLoadVsGenerationService:
     @staticmethod
     async def _fetch_generation_dataframe(start_dt: datetime, end_dt: datetime) -> pd.DataFrame:
         token = os.getenv("NOGA_API_TOKEN")
-        if not token:
+        if not token and not use_nzo_fallback_only():
             raise HTTPException(status_code=424, detail="NOGA_API_TOKEN is not configured.")
 
         raw_values = await NogaService.fetch_production_mix(

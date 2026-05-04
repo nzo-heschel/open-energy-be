@@ -5,6 +5,8 @@ import time
 from typing import Any, Dict, List, Tuple, Optional
 import httpx
 
+from app.services.noga_source_mode import use_nzo_fallback_only
+
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://apim-api.noga-iso.co.il/"
@@ -70,6 +72,14 @@ class NogaCO2Service:
     @staticmethod
     async def fetch_co2_data(from_date: str, to_date: str, subscription_key: Optional[str] = None) -> List[Dict]:
         """Fetch CO2 data from NOGA API with NZO fallback."""
+        if use_nzo_fallback_only():
+            from app.services.nzo_fallback_service import NZOFallbackService
+            return await NZOFallbackService.fetch_co2_data(
+                start_date=from_date,
+                end_date=to_date,
+                time_resolution="hour",
+            )
+
         try:
             return await NogaCO2Service._fetch_from_noga(from_date, to_date, subscription_key)
         except Exception as noga_exc:

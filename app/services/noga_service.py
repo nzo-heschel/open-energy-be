@@ -11,6 +11,8 @@ from fastapi import HTTPException
 from requests.exceptions import ChunkedEncodingError
 from urllib3.exceptions import ProtocolError
 
+from app.services.noga_source_mode import use_nzo_fallback_only
+
 logger = logging.getLogger(__name__)
 
 # Proxy helpers disabled while running without a proxy/VPN.
@@ -25,12 +27,15 @@ BASE_URL = "https://apim-api.noga-iso.co.il/"
 
 class NogaService:
     @staticmethod
-    async def fetch_production_mix(start: str, end: str, token: str) -> List[Dict]:
+    async def fetch_production_mix(start: str, end: str, token: str | None) -> List[Dict]:
         """
         Fetch production mix from NOGA API with NZO fallback.
         start, end: 'dd-mm-yyyy'
         token: NOGA API token
         """
+        if use_nzo_fallback_only():
+            return await NogaService._fetch_from_nzo(start, end)
+
         # Try NOGA first, fall back to NZO if NOGA fails
         try:
             return await NogaService._fetch_from_noga(start, end, token)
@@ -58,11 +63,33 @@ class NogaService:
         Dividing by 12 still gives correct MWh per hour.
         """
         from app.services.nzo_fallback_service import NZOFallbackService
-        return await NZOFallbackService.fetch_energy_data(
-            start_date=start,
-            end_date=end,
-            time_resolution="hour",
-        )
+
+        start_dt = datetime.strptime(start, "%d-%m-%Y").date()
+        end_dt = datetime.strptime(end, "%d-%m-%Y").date()
+        if (end_dt - start_dt).days <= 31:
+            return await NZOFallbackService.fetch_energy_data(
+                start_date=start,
+                end_date=end,
+                time_resolution="hour",
+            )
+
+        dedup: dict[tuple[str, str], Dict] = {}
+        cur = start_dt
+        while cur <= end_dt:
+            chunk_end = min(cur + timedelta(days=30), end_dt)
+            chunk_rows = await NZOFallbackService.fetch_energy_data(
+                start_date=cur.strftime("%d-%m-%Y"),
+                end_date=chunk_end.strftime("%d-%m-%Y"),
+                time_resolution="hour",
+            )
+            for row in chunk_rows:
+                date = row.get("date")
+                time = row.get("time")
+                if date and time:
+                    dedup[(date, time)] = row
+            cur = chunk_end + timedelta(days=1)
+
+        return list(dedup.values())
 
     @staticmethod
     async def _fetch_from_noga(start: str, end: str, token: str) -> List[Dict]:

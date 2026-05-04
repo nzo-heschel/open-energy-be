@@ -4,6 +4,8 @@ import time
 from typing import Dict, List
 import httpx
 
+from app.services.noga_source_mode import use_nzo_fallback_only
+
 # from app.config import PROXY_VERIFY_SSL, configure_global_proxy, get_proxies
 
 BASE_URL = "https://apim-api.noga-iso.co.il/"
@@ -22,6 +24,8 @@ class SMPService:
     async def fetch_smp_data(start: str, end: str, token: str | None) -> List[Dict]:
         # Ensure proxies are applied when the module is used directly.
         # configure_global_proxy()
+        if use_nzo_fallback_only():
+            return await SMPService._fetch_from_nzo(start, end)
 
         # Build a list of tokens to try (explicit token, then env fallbacks).
         tokens_to_try: list[str] = []
