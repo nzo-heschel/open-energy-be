@@ -52,7 +52,7 @@ def hourly_average(values):
         avg_entry = {"hour": hour}
 
         for key in items[0].keys():
-            if key in ["date", "time"]:
+            if key in ["date", "time"] or key.startswith("_"):
                 continue
             avg_entry[key] = sum(i.get(key, 0) for i in items) / 12  # average of 12 x 5 min
 

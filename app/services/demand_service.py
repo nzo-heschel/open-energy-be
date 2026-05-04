@@ -48,15 +48,18 @@ class DemandService:
             if t and t not in tokens_to_try:
                 tokens_to_try.append(t)
 
-        if not tokens_to_try:
-            raise Exception("No demand token configured. Set DEMAND_TOKEN or NOGA_API_TOKEN.")
-
         now = time.time()
         for t in tokens_to_try:
             cache_key = (start, end, t)
             cached = _CACHE.get(cache_key)
             if cached and cached["expires_at"] > now:
                 return cached["data"]
+        cached_fallback = _CACHE.get((start, end, "__nzo_fallback__"))
+        if not tokens_to_try and cached_fallback and cached_fallback["expires_at"] > now:
+            return cached_fallback["data"]
+
+        if not tokens_to_try:
+            return await DemandService._fetch_from_nzo(start, end)
 
         headers_base = {
             "Content-Type": "application/json",
@@ -98,11 +101,35 @@ class DemandService:
             detail = "Failed to fetch demand data from NOGA DEMAND endpoints."
             if last_status:
                 detail += f" Last response ({last_path}): {last_status} {last_body or ''}".strip()
-            raise Exception(detail) from last_exc
+            try:
+                return await DemandService._fetch_from_nzo(start, end)
+            except Exception as nzo_exc:
+                raise Exception(
+                    f"Both NOGA demand API and NZO fallback failed. NOGA: {detail}. NZO: {nzo_exc}"
+                ) from nzo_exc
 
         data = result if isinstance(result, list) else result.get("data", [])
         if used_token:
             _CACHE[(start, end, used_token)] = {"data": data, "expires_at": time.time() + _CACHE_TTL_SECONDS}
+        if not data:
+            return await DemandService._fetch_from_nzo(start, end)
+        return data
+
+    @staticmethod
+    async def _fetch_from_nzo(start: str, end: str) -> List[Dict]:
+        from app.services.nzo_fallback_service import NZOFallbackService
+
+        cache_key = (start, end, "__nzo_fallback__")
+        cached = _CACHE.get(cache_key)
+        if cached and cached["expires_at"] > time.time():
+            return cached["data"]
+
+        data = await NZOFallbackService.fetch_demand_data(
+            start_date=start,
+            end_date=end,
+            time_resolution="all",
+        )
+        _CACHE[cache_key] = {"data": data, "expires_at": time.time() + _CACHE_TTL_SECONDS}
         return data
 
     @staticmethod

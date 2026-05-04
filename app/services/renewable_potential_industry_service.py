@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 
 from app.services.noga_service import NogaService
 from app.services.renewable_mix_service import RENEWABLE_BUCKETS
+from app.services.renewable_transition_service import TOTAL_GENERATION_KEYS
 from app.utils.date_utils import to_iso_date, to_noga_date
 
 
@@ -32,11 +33,7 @@ class RenewablePotentialIndustryService:
         buckets: Dict[str, float] = {"solar": 0.0, "wind": 0.0, "other": 0.0}
         for bucket, keys in RENEWABLE_BUCKETS.items():
             buckets[bucket] = sum(sample.get(k, 0) or 0 for k in keys) / 12
-        total_mwh = sum(
-            value / 12
-            for key, value in sample.items()
-            if key not in ("date", "time") and isinstance(value, (int, float))
-        )
+        total_mwh = sum(sample.get(key, 0) or 0 for key in TOTAL_GENERATION_KEYS) / 12
         return buckets, total_mwh
 
     @staticmethod

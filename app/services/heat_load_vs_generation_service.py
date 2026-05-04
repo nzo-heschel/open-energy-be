@@ -14,6 +14,8 @@ from fastapi import HTTPException
 
 from app.services.csv_downloader_service import ensure_fresh_ims_weather_file
 from app.services.noga_service import NogaService
+from app.services.nzo_fallback_service import NZO_TIME_RESOLUTION_FIELD
+from app.services.renewable_transition_service import TOTAL_GENERATION_KEYS
 from app.utils.date_utils import to_noga_date
 from app.utils.enums import DataFileSource
 
@@ -216,25 +218,10 @@ class HeatLoadVsGenerationService:
 
             total_generation = sum(
                 float(sample.get(key, 0) or 0)
-                for key in (
-                    "coal",
-                    "natural_Gas",
-                    "natural_gas",
-                    "mazut",
-                    "diesel",
-                    "photoVoltaic",
-                    "photovoltaic",
-                    "photovoltaicIntegrated",
-                    "bio_Gas",
-                    "biogas",
-                    "wind",
-                    "termo_Soler",
-                    "solar",
-                    "other",
-                    "pumpedStorage",
-                    "pumped_storage",
-                )
+                for key in TOTAL_GENERATION_KEYS
             )
+            if sample.get(NZO_TIME_RESOLUTION_FIELD) == "hour":
+                total_generation /= 12
             rows.append({"timestamp": ts, "electricity_generation_mw": total_generation})
 
         if not rows:

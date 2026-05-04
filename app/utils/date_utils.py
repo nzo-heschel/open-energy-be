@@ -37,6 +37,8 @@ def resolve_date_range(start_date: str | None, end_date: str | None, default_day
     else:
         start_dt = parse_date(start_date)
         end_dt = parse_date(end_date)
+        # Query params are date-only, so include the whole selected end day.
+        end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
     if start_dt > end_dt:
         raise HTTPException(

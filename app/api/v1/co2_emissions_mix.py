@@ -73,6 +73,7 @@ async def get_emissions_mix(
         total_coal = 0.0
         total_gas = 0.0
         total_diesel = 0.0
+        total_emissions_raw = 0.0
         total_demand = 0.0  # For emissions per kWh calculation
         total_ratio_sum = 0.0  # Sum of co2_ratio values for calculating emissions avoided
 
@@ -86,6 +87,7 @@ async def get_emissions_mix(
             total_coal += coal
             total_gas += gas
             total_diesel += diesel
+            total_emissions_raw += coal + gas + diesel
             total_demand += demand
             total_ratio_sum += ratio
 
@@ -97,7 +99,7 @@ async def get_emissions_mix(
         total_ratio_sum = total_ratio_sum / 12.0
 
         # Total emissions (excluding mazut and methanol as per requirement)
-        total_emissions = total_coal + total_gas + total_diesel
+        total_emissions = total_emissions_raw / 12.0
 
         # Emissions per kWh (convert MWh to kWh: multiply demand by 1000)
         total_kwh = total_demand * 1000  # MWh to kWh

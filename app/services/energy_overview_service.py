@@ -28,7 +28,7 @@ class EnergyOverviewService:
         for hour_key, items in grouped.items():
             hour_entry = {"hour": hour_key}
             for key in items[0].keys():
-                if key in ["date", "time"]:
+                if key in ["date", "time"] or key.startswith("_"):
                     continue
                 hour_entry[key] = sum(i.get(key, 0) for i in items) / 12
             result.append(hour_entry)
@@ -141,7 +141,7 @@ class EnergyOverviewService:
 
         token = os.getenv("NOGA_API_TOKEN")
         start_dt = parse_date(start_date)
-        end_dt = parse_date(end_date)
+        end_dt = parse_date(end_date).replace(hour=23, minute=59, second=59)
 
         # Fetch from NOGA API
         raw = await NogaService.fetch_production_mix(

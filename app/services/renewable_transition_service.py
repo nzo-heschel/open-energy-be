@@ -18,8 +18,21 @@ RENEWABLE_KEYS = (
     "wind",
     "pv_storage",
     "photovoltaic_storage",
-    "storage",
+)
+
+TOTAL_GENERATION_KEYS = (
+    "coal",
+    "natural_Gas",
+    "natural_gas",
+    "mazut",
+    "diesel",
+    "Diesel",
+    *RENEWABLE_KEYS,
+    "other",
     "batteries",
+    "pumpedStorage",
+    "pumped_storage",
+    "pumpedStorageBattery",
 )
 
 
@@ -46,12 +59,7 @@ class RenewableTransitionService:
         Returns (renewable_mwh, total_mwh).
         """
         renewable_power = sum(sample.get(k, 0) or 0 for k in RENEWABLE_KEYS)
-        total_power = 0.0
-        for key, value in sample.items():
-            if key in ("date", "time"):
-                continue
-            if isinstance(value, (int, float)):
-                total_power += value
+        total_power = sum(sample.get(k, 0) or 0 for k in TOTAL_GENERATION_KEYS)
         renewable_mwh = renewable_power / 12
         total_mwh = total_power / 12
         return renewable_mwh, total_mwh
@@ -186,7 +194,7 @@ class RenewableTransitionService:
         if start_date and end_date:
             from app.utils.date_utils import parse_date
             start_dt = parse_date(start_date)
-            end_dt = parse_date(end_date)
+            end_dt = parse_date(end_date).replace(hour=23, minute=59, second=59)
         elif years:
             start_dt = datetime(year=min(years), month=1, day=1)
             end_year = max(years)
