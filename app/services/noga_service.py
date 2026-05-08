@@ -220,17 +220,18 @@ class NogaService:
                 v.get("mazut", 0),       # fuel_oil
                 v.get("diesel", 0),      # diesel
                 v.get("Diesel", 0),
+                v.get("termo_Soler", 0), # thermal solar — classified as non-renewable per client
             ])
             agg["Renewables"] += sum([
                 v.get("photoVoltaic", 0),
                 v.get("bio_Gas", 0),
                 v.get("wind", 0),
-                v.get("termo_Soler", 0),
                 v.get("photovoltaicIntegrated", 0),
                 v.get("pv_storage", 0),
                 v.get("photovoltaic_storage", 0),
                 # "storage" field dropped per client request
                 # "batteries" moved to Other
+                # "termo_Soler" (thermal solar) moved to Non-renewables per client
             ])
             agg["Other"] += sum([
                 v.get("other", 0),

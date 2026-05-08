@@ -55,12 +55,12 @@ class EnergyOverviewService:
                 "natural_gas": 0,
                 "diesel": 0,
                 "fuel_oil": 0,
+                "solar": 0,
             },
             "renewables": {
                 "photovoltaic": 0,
                 "biogas": 0,
                 "wind": 0,
-                "solar": 0,
                 "pv_storage": 0,
             },
             "other": {
@@ -79,6 +79,7 @@ class EnergyOverviewService:
             level2["non_renewables"]["natural_gas"] += sum_keys(h, ["natural_Gas", "natural_gas"])
             level2["non_renewables"]["diesel"] += sum_keys(h, ["diesel", "Diesel"])
             level2["non_renewables"]["fuel_oil"] += sum_keys(h, ["mazut"])
+            level2["non_renewables"]["solar"] += sum_keys(h, ["termo_Soler", "solar"])
 
             # Renewable — "storage" field dropped per client; batteries moved to Other
             level2["renewables"]["photovoltaic"] += sum_keys(
@@ -86,7 +87,6 @@ class EnergyOverviewService:
             )
             level2["renewables"]["biogas"] += sum_keys(h, ["bio_Gas", "biogas"])
             level2["renewables"]["wind"] += sum_keys(h, ["wind"])
-            level2["renewables"]["solar"] += sum_keys(h, ["termo_Soler", "solar"])
             level2["renewables"]["pv_storage"] += sum_keys(
                 h,
                 [

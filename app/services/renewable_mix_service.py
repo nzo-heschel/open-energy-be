@@ -8,7 +8,7 @@ from app.utils.date_utils import to_iso_date, to_noga_date
 
 # Mapping of renewable buckets to the raw NOGA keys.
 RENEWABLE_BUCKETS: Dict[str, Tuple[str, ...]] = {
-    "solar": ("photoVoltaic", "photovoltaic", "photovoltaicIntegrated", "termo_Soler", "solar"),
+    "solar": ("photoVoltaic", "photovoltaic", "photovoltaicIntegrated"),
     "wind": ("wind",),
     "other": ("bio_Gas", "biogas"),
 }
@@ -213,7 +213,7 @@ class RenewableMixService:
             "unit": "MWh",
             "y_axis_label": "[MWh]",
             "energy_types": {
-                "solar": "Photovoltaic + solar-thermal + photovoltaic with storage (MWh).",
+                "solar": "Photovoltaic + photovoltaic with storage (MWh). Thermal solar is classified as non-renewable.",
                 "wind": "Wind generation (MWh).",
                 "other": "Biogas generation (MWh).",
             },

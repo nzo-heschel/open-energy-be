@@ -94,12 +94,12 @@ def _aggregate_level2(hourly_values):
             "natural_gas": sum(_sum_keys(v, NATURAL_GAS_KEYS) for v in hourly_values),
             "diesel": sum(_sum_keys(v, DIESEL_KEYS) for v in hourly_values),
             "fuel_oil": sum(_sum_keys(v, FUEL_OIL_KEYS) for v in hourly_values),
+            "solar_thermal": sum(_sum_keys(v, SOLAR_THERMAL_KEYS) for v in hourly_values),
         },
         "Renewables": {
             "photoVoltaic": sum(_sum_keys(v, PHOTOVOLTAIC_KEYS) for v in hourly_values),
             "biogas": sum(_sum_keys(v, BIOGAS_KEYS) for v in hourly_values),
             "wind": sum(_sum_keys(v, WIND_KEYS) for v in hourly_values),
-            "solar_thermal": sum(_sum_keys(v, SOLAR_THERMAL_KEYS) for v in hourly_values),
             "pv_storage": sum(_sum_keys(v, PV_STORAGE_KEYS) for v in hourly_values),
         },
         "Other": {
@@ -197,8 +197,8 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
                 "renewables": 0.0,
                 "other": 0.0,
                 "level2": {
-                    "Non-renewables": {"coal": 0.0, "natural_gas": 0.0, "diesel": 0.0, "fuel_oil": 0.0},
-                    "Renewables": {"photoVoltaic": 0.0, "biogas": 0.0, "wind": 0.0, "solar_thermal": 0.0, "pv_storage": 0.0},
+                    "Non-renewables": {"coal": 0.0, "natural_gas": 0.0, "diesel": 0.0, "fuel_oil": 0.0, "solar_thermal": 0.0},
+                    "Renewables": {"photoVoltaic": 0.0, "biogas": 0.0, "wind": 0.0, "pv_storage": 0.0},
                     "Other": {"other": 0.0, "batteries": 0.0, "pumped_storage": 0.0},
                 },
             },
@@ -218,8 +218,8 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
         other_v = _sum_keys(hv, OTHER_KEYS)
         pumped_v = _sum_keys(hv, PUMPED_STORAGE_KEYS)
 
-        bucket["non_renewables"] += coal_v + natural_gas_v + diesel_v + fuel_oil_v
-        bucket["renewables"] += photo_v + bio_gas_v + wind_v + termo_v + pv_integrated_v
+        bucket["non_renewables"] += coal_v + natural_gas_v + diesel_v + fuel_oil_v + termo_v
+        bucket["renewables"] += photo_v + bio_gas_v + wind_v + pv_integrated_v
         bucket["other"] += other_v + batteries_v + pumped_v
 
         # Per-period Level-2 breakdown (keys match `_aggregate_level2` output)
@@ -227,11 +227,11 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
         bucket["level2"]["Non-renewables"]["natural_gas"] += natural_gas_v
         bucket["level2"]["Non-renewables"]["diesel"] += diesel_v
         bucket["level2"]["Non-renewables"]["fuel_oil"] += fuel_oil_v
+        bucket["level2"]["Non-renewables"]["solar_thermal"] += termo_v
 
         bucket["level2"]["Renewables"]["photoVoltaic"] += photo_v
         bucket["level2"]["Renewables"]["biogas"] += bio_gas_v
         bucket["level2"]["Renewables"]["wind"] += wind_v
-        bucket["level2"]["Renewables"]["solar_thermal"] += termo_v
         bucket["level2"]["Renewables"]["pv_storage"] += pv_integrated_v
 
         bucket["level2"]["Other"]["other"] += other_v
@@ -249,10 +249,10 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
             "natural_gas_mw": round(bucket["level2"]["Non-renewables"]["natural_gas"], 2),
             "diesel_mw": round(bucket["level2"]["Non-renewables"]["diesel"], 2),
             "fuel_oil_mw": round(bucket["level2"]["Non-renewables"]["fuel_oil"], 2),
+            "solar_thermal_mw": round(bucket["level2"]["Non-renewables"]["solar_thermal"], 2),
             "photoVoltaic_mw": round(bucket["level2"]["Renewables"]["photoVoltaic"], 2),
             "biogas_mw": round(bucket["level2"]["Renewables"]["biogas"], 2),
             "wind_mw": round(bucket["level2"]["Renewables"]["wind"], 2),
-            "solar_thermal_mw": round(bucket["level2"]["Renewables"]["solar_thermal"], 2),
             "pv_storage_mw": round(bucket["level2"]["Renewables"]["pv_storage"], 2),
             "other_source_mw": round(bucket["level2"]["Other"]["other"], 2),
             "batteries_mw": round(bucket["level2"]["Other"]["batteries"], 2),
@@ -282,12 +282,12 @@ def _bucket_time_series(hourly_values: List[Dict], view: Granularity) -> List[Di
                         "natural_gas": round(bucket["level2"]["Non-renewables"]["natural_gas"], 2),
                         "diesel": round(bucket["level2"]["Non-renewables"]["diesel"], 2),
                         "fuel_oil": round(bucket["level2"]["Non-renewables"]["fuel_oil"], 2),
+                        "solar_thermal": round(bucket["level2"]["Non-renewables"]["solar_thermal"], 2),
                     },
                     "Renewables": {
                         "photoVoltaic": round(bucket["level2"]["Renewables"]["photoVoltaic"], 2),
                         "biogas": round(bucket["level2"]["Renewables"]["biogas"], 2),
                         "wind": round(bucket["level2"]["Renewables"]["wind"], 2),
-                        "solar_thermal": round(bucket["level2"]["Renewables"]["solar_thermal"], 2),
                         "pv_storage": round(bucket["level2"]["Renewables"]["pv_storage"], 2),
                     },
                     "Other": {

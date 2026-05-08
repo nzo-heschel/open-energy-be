@@ -106,7 +106,7 @@ class RenewablePotentialIndustryService:
             "unit": "MWh",
             "y_axis_label": "[MWh]",
             "energy_types": {
-                "solar": "Photovoltaic + solar-thermal + photovoltaic with storage (MWh).",
+                "solar": "Photovoltaic + photovoltaic with storage (MWh). Thermal solar is classified as non-renewable.",
                 "wind": "Wind generation (MWh).",
                 "other": "Biogas generation (MWh).",
             },

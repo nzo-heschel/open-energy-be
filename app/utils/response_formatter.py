@@ -9,7 +9,6 @@ CATEGORY_CONFIG = [
             (["photoVoltaic", "photovoltaic", "photovoltaicIntegrated", "photo_voltaic"], "photo_voltaic"),
             (["bio_Gas", "biogas"], "biogas"),
             (["wind"], "wind"),
-            (["termo_Soler", "solar", "solar_thermal"], "solar_thermal"),
             (
                 ["pv_storage", "photovoltaic_storage"],
                 "pv_storage",
@@ -23,6 +22,7 @@ CATEGORY_CONFIG = [
             (["natural_Gas", "natural_gas"], "natural_gas"),
             (["diesel", "Diesel"], "diesel"),
             (["mazut"], "fuel_oil"),
+            (["termo_Soler", "solar", "solar_thermal"], "solar_thermal"),
         ],
     ),
     (
