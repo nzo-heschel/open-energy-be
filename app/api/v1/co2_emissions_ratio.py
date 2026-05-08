@@ -14,25 +14,30 @@ load_dotenv()
 router = APIRouter(prefix="/co2", tags=["CO2"])
 
 
+# NZO publishes a per-fuel emission rate (tons CO2/h) for every 5-min slot.
+# Summing those rates and dividing by 12 gives total tons CO2 for the period.
+_FOSSIL_KEYS = ("co2_coal", "co2_gas", "co2_diesel", "co2_fuel_oil", "co2_methanol")
+
+
 @router.get("/emissions-ratio")
 async def get_emissions_ratio(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> Dict:
     """
-    Endpoint 2 - CO2 Emissions Ratio (Total view only)
-    
-    Title on site: יחס פליטות CO2 -> "CO2 Emissions Ratio"
+    CO2 Emissions Ratio (intensity) — total view.
 
-    Steps (per Delivery-3):
-    - Fetch CO2 emissions data from NOGA for selected period.
-    - Compute total: sum all co2_ratio samples and divide by 12.
-    - Return total value only ("Total view").
-    
-    The CO2 API returns field: co2_ratio (tons CO2 per MWh)
+    Title on site: יחס פליטות CO2 / עצימות פליטות CO2 → "CO2 Emissions Intensity"
+
+    Defined as the energy-weighted average emission factor for the period:
+
+        intensity = total_fossil_emissions (tons CO2) / total_demand (MWh)
+
+    This is the standard grid-emissions-intensity metric. It is *not* the
+    arithmetic mean of NZO's per-sample `Co2Ratio`, which would over-weight
+    low-load periods.
     """
     try:
-        # Aligning with CO2 endpoints default (month-style): 30 days
         start_dt, end_dt = resolve_date_range(start_date, end_date, default_days=30)
 
         subscription_key = os.getenv("CO2_TOKEN")
@@ -46,20 +51,22 @@ async def get_emissions_ratio(
         if not raw:
             raise ValueError("No CO2 samples returned for the selected period.")
 
-        # Calculate total CO2 ratio: sum all co2_ratio samples and divide by 12
-        # Data is sampled every 5 minutes = 12 samples/hour
-        total_ratio = 0.0
-        for sample in raw:
-            ratio = CO2Processor._as_float(sample.get("co2_ratio", 0)) or 0
-            total_ratio += ratio
-        
-        # Divide by 12 as per requirement (12 samples per hour)
-        total_ratio = total_ratio / 12.0
+        total_fossil_tons = sum(
+            CO2Processor.sum_samples_divide_by_12(raw, k) for k in _FOSSIL_KEYS
+        )
+        total_demand_mwh = CO2Processor.sum_samples_divide_by_12(raw, "co2_current_demand")
 
-        # Requirement says: total value only ("Total view")
+        if total_demand_mwh <= 0:
+            ratio_per_mwh = 0.0
+        else:
+            ratio_per_mwh = total_fossil_tons / total_demand_mwh
+
         return {
-            "total": round(total_ratio, 4),
+            "total": round(ratio_per_mwh, 4),
             "unit": "tons CO2/MWh",
+            "total_emissions": round(total_fossil_tons, 2),
+            "total_emissions_unit": "tons CO2",
+            "total_generation_mwh": round(total_demand_mwh, 2),
             "start_date": start_dt.date().isoformat(),
             "end_date": end_dt.date().isoformat(),
         }

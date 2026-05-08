@@ -1,4 +1,4 @@
-# app/api/v1/co2.py
+# app/api/v1/co2_emission_savings.py
 import os
 from typing import Dict, Optional
 
@@ -20,18 +20,17 @@ async def get_emissions_savings(
     end_date: Optional[str] = None,
 ) -> Dict:
     """
-    Endpoint 1 - Emissions Savings (Total view only)
+    CO2 Emissions Savings — total view.
 
-    Steps (per Delivery-3):
-    - Fetch CO2 emissions data from NOGA for selected period.
-    - Compute total: sum all samples and divide by 12.
-    - Return total only.
-    
-    The CO2 API returns fields: co2_coal, co2_gas, co2_diesel, co2_current_demand, co2_ratio
-    Total emissions = co2_coal + co2_gas + co2_diesel
+    Title on site: חיסכון בפליטות CO2 → "CO2 Emissions Savings"
+
+    The savings figure is the CO2 emissions avoided because demand was met
+    by renewables instead of fossil fuels. NZO publishes this directly in
+    its `Renewables` CO2 field (mapped to `co2_renewables` internally).
+    Every 5-min sample is an instantaneous tons CO2/h rate, so summing the
+    rates and dividing by 12 yields total tons CO2 for the period.
     """
     try:
-        # Aligning with CO2 endpoints default (month-style): 30 days
         start_dt, end_dt = resolve_date_range(start_date, end_date, default_days=30)
 
         subscription_key = os.getenv("CO2_TOKEN")
@@ -45,21 +44,10 @@ async def get_emissions_savings(
         if not raw:
             raise ValueError("No CO2 samples returned for the selected period.")
 
-        # Calculate total emissions (sum co2_coal + co2_gas + co2_diesel) / 12
-        # Data is sampled every 5 minutes = 12 samples/hour
-        total_emissions = 0.0
-        for sample in raw:
-            coal = CO2Processor._as_float(sample.get("co2_coal", 0)) or 0
-            gas = CO2Processor._as_float(sample.get("co2_gas", 0)) or 0
-            diesel = CO2Processor._as_float(sample.get("co2_diesel", 0)) or 0
-            total_emissions += coal + gas + diesel
-        
-        # Divide by 12 as per requirement (12 samples per hour)
-        total_emissions = total_emissions / 12.0
+        savings = CO2Processor.sum_samples_divide_by_12(raw, "co2_renewables")
 
-        # Requirement says: total value only ("Total view")
         return {
-            "total": round(total_emissions, 2),
+            "total": round(savings, 2),
             "unit": "tons CO2",
             "start_date": start_dt.date().isoformat(),
             "end_date": end_dt.date().isoformat(),
