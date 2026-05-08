@@ -62,10 +62,10 @@ class EnergyOverviewService:
                 "biogas": 0,
                 "wind": 0,
                 "pv_storage": 0,
+                "thermo": 0,
             },
             "other": {
                 "other": 0,
-                "batteries": 0,
                 "pumped_storage": 0,
             }
         }
@@ -95,11 +95,12 @@ class EnergyOverviewService:
                     "photovoltaic_storage",
                 ],
             )
+            level2["renewables"]["thermo"] += sum_keys(h, ["thermo", "Thermo"])
 
-            # Other — batteries and pumped_storage are distinct standalone fields
+            # Other — only `other` + Psp (gross pumped-storage). Net storage flows
+            # (BatteriesNet, PspNet) are excluded from the generation breakdown per client.
             level2["other"]["other"] += sum_keys(h, ["other"])
-            level2["other"]["batteries"] += sum_keys(h, ["batteries"])
-            level2["other"]["pumped_storage"] += sum_keys(h, ["pumpedStorage", "pumped_storage", "pumpedStorageBattery"])
+            level2["other"]["pumped_storage"] += sum_keys(h, ["pumpedStorage", "pumped_storage"])
 
         # Level-1 sums
         level1["non_renewables"] = sum(level2["non_renewables"].values())

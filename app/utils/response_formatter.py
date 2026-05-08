@@ -13,6 +13,7 @@ CATEGORY_CONFIG = [
                 ["pv_storage", "photovoltaic_storage"],
                 "pv_storage",
             ),
+            (["thermo", "Thermo"], "thermo"),
         ],
     ),
     (
@@ -29,8 +30,7 @@ CATEGORY_CONFIG = [
         "other",
         [
             (["other"], "other"),
-            (["batteries"], "batteries"),
-            (["pumpedStorage", "pumped_storage", "pumpedStorageBattery"], "pumped_storage"),
+            (["pumpedStorage", "pumped_storage"], "pumped_storage"),
         ],
     ),
 ]

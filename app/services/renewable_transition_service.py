@@ -15,6 +15,8 @@ RENEWABLE_KEYS = (
     "wind",
     "pv_storage",
     "photovoltaic_storage",
+    "thermo",
+    "Thermo",
 )
 
 TOTAL_GENERATION_KEYS = (
@@ -29,10 +31,9 @@ TOTAL_GENERATION_KEYS = (
     "solar_thermal",
     *RENEWABLE_KEYS,
     "other",
-    "batteries",
     "pumpedStorage",
     "pumped_storage",
-    "pumpedStorageBattery",
+    # batteries / pumpedStorageBattery excluded per client
 )
 
 

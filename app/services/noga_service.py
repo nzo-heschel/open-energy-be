@@ -229,15 +229,15 @@ class NogaService:
                 v.get("photovoltaicIntegrated", 0),
                 v.get("pv_storage", 0),
                 v.get("photovoltaic_storage", 0),
+                v.get("thermo", 0),       # NZO Thermo — renewable per client
+                v.get("Thermo", 0),
                 # "storage" field dropped per client request
-                # "batteries" moved to Other
-                # "termo_Soler" (thermal solar) moved to Non-renewables per client
+                # "termo_Soler" (NZO Solar) classified as non-renewable per client
             ])
             agg["Other"] += sum([
                 v.get("other", 0),
-                v.get("batteries", 0),
                 v.get("pumpedStorage", 0),
-                v.get("pumpedStorageBattery", 0),
+                # "batteries"/BatteriesNet and pumpedStorageBattery (PspNet) excluded per client
             ])
 
         return agg

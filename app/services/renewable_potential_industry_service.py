@@ -108,7 +108,7 @@ class RenewablePotentialIndustryService:
             "energy_types": {
                 "solar": "Photovoltaic + photovoltaic with storage (MWh). Thermal solar is classified as non-renewable.",
                 "wind": "Wind generation (MWh).",
-                "other": "Biogas generation (MWh).",
+                "other": "Biogas + thermo generation (MWh).",
             },
             "tooltip": (
                 "Renewable production potential by industry type (solar, wind, biogas). "

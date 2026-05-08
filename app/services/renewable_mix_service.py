@@ -10,7 +10,7 @@ from app.utils.date_utils import to_iso_date, to_noga_date
 RENEWABLE_BUCKETS: Dict[str, Tuple[str, ...]] = {
     "solar": ("photoVoltaic", "photovoltaic", "photovoltaicIntegrated"),
     "wind": ("wind",),
-    "other": ("bio_Gas", "biogas"),
+    "other": ("bio_Gas", "biogas", "thermo", "Thermo"),
 }
 
 
@@ -215,7 +215,7 @@ class RenewableMixService:
             "energy_types": {
                 "solar": "Photovoltaic + photovoltaic with storage (MWh). Thermal solar is classified as non-renewable.",
                 "wind": "Wind generation (MWh).",
-                "other": "Biogas generation (MWh).",
+                "other": "Biogas + thermo generation (MWh).",
             },
             "tooltip": (
                 "Renewable energy production mix showing solar, wind, and biogas generation. "
