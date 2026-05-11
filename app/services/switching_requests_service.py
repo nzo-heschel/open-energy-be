@@ -89,7 +89,11 @@ def _resolve_column(df: pd.DataFrame, possible: list[str], required: bool = True
             if name_norm and name_norm in col_norm:
                 return col
     if required:
-        raise KeyError(f"Missing expected columns matching: {possible}")
+        actual = [str(c) for c in df.columns]
+        raise KeyError(
+            f"Missing expected columns matching: {possible}. "
+            f"Actual columns in data file: {actual}"
+        )
     return None
 
 
@@ -140,14 +144,32 @@ def _map_rejection_reason(value: str) -> str:
 
 def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
     csv_path = csv_path or ensure_fresh_or_download(DataFileSource.SWITCHING_REQUESTS)
-    df = None
+
+    # Sniff the file: if it starts with `<` we know gov.il served an HTML error
+    # page that the downloader incorrectly accepted. Surface a clear message
+    # instead of a misleading "missing column" error two layers down.
+    try:
+        with csv_path.open("rb") as fh:
+            head_bytes = fh.read(256)
+    except OSError as exc:
+        raise ValueError(f"Unable to read data file: {exc}") from exc
+    head_text = head_bytes.lstrip().decode("utf-8", errors="ignore").lower()
+    if head_text.startswith(("<!doctype html", "<html", "<head", "<body", "<?xml")):
+        raise ValueError(
+            "Switching-requests data file is HTML (gov.il likely returned an error "
+            "page during the last refresh). Upload a fresh CSV/XLSX via "
+            "/api/v1/data-files/upload, or trigger /api/v1/data-files/fetch when "
+            "gov.il is reachable again."
+        )
+
+    df: Optional[pd.DataFrame] = None
     if csv_path.suffix.lower() in (".xls", ".xlsx"):
         try:
             df = pd.read_excel(csv_path)
         except Exception:
             df = None
     if df is None:
-        for enc in ("utf-8-sig", "cp1255", "latin1"):
+        for enc in ("utf-8-sig", "utf-8", "cp1255", "cp1252", "iso-8859-8", "latin1"):
             try:
                 df = pd.read_csv(csv_path, encoding=enc)
                 break
@@ -156,10 +178,61 @@ def _load_dataframe(csv_path: Optional[Path] = None) -> pd.DataFrame:
     if df is None:
         raise ValueError("Unable to parse switching-requests data file.")
 
-    df.columns = [c.replace("\ufeff", "").strip() for c in df.columns]
+    df.columns = [str(c).replace("\ufeff", "").strip() for c in df.columns]
+
+    # If the apparent header row doesn't contain any known markers, scan the
+    # first few rows for the real header (gov.il sometimes adds a metadata row
+    # above the real columns).
+    if not any(_normalize_col(c) for c in df.columns) or not _columns_look_valid(df.columns):
+        df = _promote_header_row(csv_path, df)
+
     if not df.empty and _looks_like_header_row(df.iloc[0]):
         df = df.iloc[1:]
     return df
+
+
+_KNOWN_HEADER_NORMS = {_normalize_col(m) for m in HEADER_MARKERS}
+
+
+def _columns_look_valid(columns) -> bool:
+    """True if at least one column matches a known header marker (en or he)."""
+    for col in columns:
+        norm = _normalize_col(col)
+        if not norm:
+            continue
+        for marker in _KNOWN_HEADER_NORMS:
+            if marker and (marker in norm or norm in marker):
+                return True
+    return False
+
+
+def _promote_header_row(csv_path: Path, original_df: pd.DataFrame) -> pd.DataFrame:
+    """Search the first 10 rows for a real header row and re-read using it.
+
+    Useful when the source file has metadata above the headers (e.g. a title
+    row, generation date) which would otherwise become the column names.
+    """
+    for header_row in range(1, 10):
+        try:
+            if csv_path.suffix.lower() in (".xls", ".xlsx"):
+                candidate = pd.read_excel(csv_path, header=header_row)
+            else:
+                for enc in ("utf-8-sig", "utf-8", "cp1255", "cp1252", "iso-8859-8", "latin1"):
+                    try:
+                        candidate = pd.read_csv(csv_path, encoding=enc, header=header_row)
+                        break
+                    except Exception:
+                        candidate = None
+                else:
+                    continue
+                if candidate is None:
+                    continue
+            candidate.columns = [str(c).replace("\ufeff", "").strip() for c in candidate.columns]
+            if _columns_look_valid(candidate.columns):
+                return candidate
+        except Exception:
+            continue
+    return original_df
 
 
 def _group_sum(df: pd.DataFrame, key: str, value_col: str) -> List[Dict]:

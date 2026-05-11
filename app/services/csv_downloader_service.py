@@ -170,11 +170,25 @@ def _download_bytes(url: str, dataset: str) -> tuple[Optional[bytes], Optional[s
 
 def _validate_content(content: bytes) -> Optional[str]:
     """
-    Check if downloaded content is a valid CSV, not a captcha page.
+    Check if downloaded content is a valid CSV/XLSX, not an HTML error page.
     Returns an error string if invalid, None if OK.
+
+    XLSX files start with the ZIP magic ``PK\\x03\\x04``; CSV files start with
+    text (possibly a BOM) but never an HTML tag. If the first non-whitespace
+    characters look like HTML, gov.il is returning a 403/captcha/error page,
+    not the CSV. Saving that would clobber the last good file on disk.
     """
-    snippet = content[:2000].decode("utf-8", errors="ignore").lower()
-    if "<html" in snippet and ("captcha" in snippet or "challenge" in snippet):
+    head = content[:4]
+    if head.startswith(b"PK\x03\x04"):
+        return None  # Looks like a valid XLSX
+    snippet = content[:2000].decode("utf-8", errors="ignore")
+    stripped = snippet.lstrip().lower()
+    if stripped.startswith(("<!doctype html", "<html", "<?xml", "<head", "<body")):
+        return (
+            "Downloaded content is an HTML page (likely 403/captcha from gov.il), "
+            "not the actual CSV. Keeping the previously stored file."
+        )
+    if "<html" in stripped and ("captcha" in stripped or "challenge" in stripped):
         return (
             "Downloaded content appears to be a Cloudflare challenge page, "
             "not the actual CSV. The server may need a different IP or proxy."
@@ -698,6 +712,20 @@ async def download_csv(
             "method": method_used,
         }
 
+    # ── Parse-test before committing to disk ─────────────────────────────
+    suffix = ".xlsx" if content_type and ("excel" in content_type.lower() or "spreadsheet" in content_type.lower()) else ".csv"
+    if not _is_parseable_bytes(content, suffix):
+        return {
+            "success": False,
+            "dataset": dataset,
+            "url": url,
+            "error": (
+                f"Downloaded {len(content)} bytes but content is not parseable "
+                f"as {suffix}. Keeping previously stored file."
+            ),
+            "method": method_used,
+        }
+
     # ── Save to disk (old files cleaned AFTER successful save) ───────────
     dest = _save_downloaded_file(dataset, content, content_type)
 
@@ -784,16 +812,57 @@ def _try_download_sync(dataset: str) -> Optional[Path]:
         )
         return None
 
-    # Validate it's not a captcha page
+    # Validate it's not a captcha page / HTML error response.
     validation_error = _validate_content(content)
     if validation_error:
         logger.warning("Auto-refresh validation failed for %s: %s", dataset, validation_error)
         return None
 
-    # Save (old files cleaned AFTER new file is written)
+    # Parse-test the bytes BEFORE writing to disk. ``_save_downloaded_file``
+    # also cleans up older sibling files, so writing a bad file would erase
+    # our last-good fallback. Bailing here keeps the previous file intact.
+    suffix = ".xlsx" if content_type and ("excel" in content_type.lower() or "spreadsheet" in content_type.lower()) else ".csv"
+    if not _is_parseable_bytes(content, suffix):
+        logger.warning(
+            "Auto-refresh for %s downloaded %d bytes but the content is not "
+            "parseable as %s — keeping previous file.",
+            dataset, len(content), suffix,
+        )
+        return None
+
+    # Save (old files cleaned AFTER new file is written).
     dest = _save_downloaded_file(dataset, content, content_type)
     logger.info("Auto-refresh: %s downloaded → %s", dataset, dest.name)
     return dest
+
+
+def _is_parseable_bytes(content: bytes, suffix: str) -> bool:
+    """Sanity-check downloaded bytes look like a real CSV/XLSX with headers.
+
+    Runs on in-memory bytes so we can decide whether to commit to disk —
+    we don't want to write a bad file because writing also deletes older
+    sibling files (the auto-cleanup in ``_save_downloaded_file``).
+    """
+    try:
+        head = content[:256].lstrip().decode("utf-8", errors="ignore").lower()
+        if head.startswith(("<!doctype html", "<html", "<head", "<body", "<?xml")):
+            return False
+
+        import pandas as pd
+        from io import BytesIO
+
+        if suffix == ".xlsx":
+            pd.read_excel(BytesIO(content), nrows=1)
+            return True
+        for enc in ("utf-8-sig", "utf-8", "cp1255", "cp1252", "iso-8859-8", "latin1"):
+            try:
+                pd.read_csv(BytesIO(content), encoding=enc, nrows=1)
+                return True
+            except Exception:
+                continue
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Parseability check on downloaded bytes failed: %s", exc)
+    return False
 
 
 def ensure_fresh_or_download(dataset: Union[str, DataFileSource]) -> Path:
@@ -829,10 +898,12 @@ def ensure_fresh_or_download(dataset: Union[str, DataFileSource]) -> Path:
     new_path = _try_download_sync(dataset_key)
 
     if new_path:
-        # Download succeeded — return the new file
+        # Download + parse-test both succeeded inside _try_download_sync.
         return new_path
 
-    # Download failed — fall back to existing stale file if available
+    # Download failed (or the downloaded bytes were unparseable / HTML). The
+    # previous file is still intact because we parse-test BEFORE writing to
+    # disk — fall back to it silently so the endpoint keeps serving.
     if existing_path:
         logger.warning(
             "Auto-refresh failed for %s, using stale file: %s",
