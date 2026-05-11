@@ -297,7 +297,18 @@ def build_payload(
 
     year_month_col = _resolve_column(
         df,
-        ["year / month", "year/month", "year-month", "year_month", "שנה/ חודש"],
+        [
+            # gov.il renamed this column from "שנה/ חודש" to "Date" in May 2026 —
+            # keep both spellings + common variants so a future rename still resolves.
+            "Date",
+            "date",
+            "year / month",
+            "year/month",
+            "year-month",
+            "year_month",
+            "שנה/ חודש",
+            "תאריך",
+        ],
         required=True,
     )
     requests_col = _resolve_column(
