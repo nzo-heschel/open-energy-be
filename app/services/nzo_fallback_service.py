@@ -13,9 +13,11 @@ Documentation from client:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -23,6 +25,24 @@ logger = logging.getLogger(__name__)
 
 NZO_BASE_URL = "https://data.nzo.org.il:8080/get"
 NZO_TIME_RESOLUTION_FIELD = "_nzo_time_resolution"
+
+# Successful NZO responses are cached for this long. Same params -> same payload,
+# so the FE can fire several charts at once without each one re-hitting NZO.
+_CACHE_TTL_SECONDS = 300
+
+# (expires_at, payload) keyed by canonical param string.
+_RESPONSE_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+# In-flight requests keyed by canonical param string. When the FE fires the
+# same query in parallel from multiple charts, only the first call actually
+# hits NZO; the rest await the same future. This prevents the upstream from
+# being hammered with duplicate concurrent requests.
+_INFLIGHT: Dict[str, asyncio.Future] = {}
+
+
+def _cache_key(params: Dict[str, str]) -> str:
+    """Deterministic key from query params."""
+    return "&".join(f"{k}={v}" for k, v in sorted(params.items()))
 
 # Map NZO energy key names → NOGA original key names
 # NZO uses PascalCase; NOGA uses camelCase / mixed.
@@ -172,28 +192,72 @@ class NZOFallbackService:
 
     @staticmethod
     async def _do_request(params: Dict[str, str]) -> Dict[str, Any]:
-        """Execute a GET request to NZO with minimal retries."""
+        """GET against NZO with response cache + request coalescing + retries.
+
+        - Cache hit on identical params returns the cached payload (5-min TTL).
+        - If another coroutine is already fetching the same params, we await
+          its result instead of duplicating the call. This is the key fix for
+          the page-load storm where 4+ charts request the same data in parallel.
+        - The upstream call itself retries 4× with exponential backoff to ride
+          out NZO's intermittent 5xx / connection resets.
+        """
+        key = _cache_key(params)
+        now = time.time()
+
+        cached = _RESPONSE_CACHE.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
+
+        # NB: the .get + assignment below run without an await in between, so
+        # in asyncio's single-threaded model this is atomic.
+        existing = _INFLIGHT.get(key)
+        if existing is not None and not existing.done():
+            return await existing
+
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future = loop.create_future()
+        _INFLIGHT[key] = future
+
+        try:
+            payload = await NZOFallbackService._do_request_uncached(params)
+            _RESPONSE_CACHE[key] = (time.time() + _CACHE_TTL_SECONDS, payload)
+            future.set_result(payload)
+            return payload
+        except Exception as exc:
+            future.set_exception(exc)
+            raise
+        finally:
+            if _INFLIGHT.get(key) is future:
+                _INFLIGHT.pop(key, None)
+
+    @staticmethod
+    async def _do_request_uncached(params: Dict[str, str]) -> Dict[str, Any]:
+        """Raw HTTP call with exponential-backoff retries. Used by _do_request."""
         timeout = httpx.Timeout(connect=10.0, read=60.0, write=15.0, pool=10.0)
+        backoffs = (0.5, 1.0, 2.0)  # 4 total attempts
         last_exc: Exception | None = None
 
-        for attempt in range(2):  # 2 attempts max
-            try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for attempt in range(4):
+                try:
                     response = await client.get(NZO_BASE_URL, params=params)
                     response.raise_for_status()
                     return response.json()
-            except Exception as exc:
-                last_exc = exc
-                logger.warning(
-                    "NZO fallback attempt %d failed: %s", attempt + 1, exc
-                )
-                if attempt < 1:
-                    import asyncio
-                    await asyncio.sleep(0.5)
-                    continue
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning(
+                        "NZO attempt %d/4 failed (%s %s..%s): %s",
+                        attempt + 1,
+                        params.get("type", "?"),
+                        params.get("start_date", "?"),
+                        params.get("end_date", "?"),
+                        exc,
+                    )
+                    if attempt < 3:
+                        await asyncio.sleep(backoffs[attempt])
 
         raise Exception(
-            f"NZO fallback failed after 2 attempts: {last_exc}"
+            f"NZO fallback failed after 4 attempts: {last_exc}"
         ) from last_exc
 
     @staticmethod
