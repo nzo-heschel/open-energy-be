@@ -4,6 +4,15 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
+FOSSIL_EMISSION_FIELDS = {
+    "coal": "co2_coal",
+    "fuel_oil": "co2_fuel_oil",
+    "natural_gas": "co2_gas",
+    "diesel": "co2_diesel",
+    "methanol": "co2_methanol",
+}
+
+
 class CO2Processor:
     @staticmethod
     def _as_float(v: Any) -> Optional[float]:
@@ -52,3 +61,63 @@ class CO2Processor:
             "None of the candidate fields were found in CO2 payload. "
             f"Candidates={list(candidate_fields)} AvailableKeys={list(sample0.keys())}"
         )
+
+    @staticmethod
+    def aggregate_totals(samples: List[Dict]) -> Dict:
+        """
+        Aggregate CO2 samples into period totals.
+
+        NZO/NOGA values are rates for 5-minute samples. Summing a field and
+        dividing by 12 converts the sampled rates into tons CO2 or MWh for
+        the selected period. The emissions ratio must be weighted:
+
+            total fossil emissions / total demand
+
+        It must not be calculated by summing or averaging the source Co2Ratio
+        samples, because that over-weights low-demand periods.
+        """
+        components = {
+            label: CO2Processor.sum_samples_divide_by_12(samples, field)
+            for label, field in FOSSIL_EMISSION_FIELDS.items()
+        }
+        total_emissions = sum(components.values())
+        demand_mwh = CO2Processor.sum_samples_divide_by_12(samples, "co2_current_demand")
+        renewable_savings = CO2Processor.sum_samples_divide_by_12(samples, "co2_renewables")
+        emissions_ratio = total_emissions / demand_mwh if demand_mwh > 0 else 0.0
+        emissions_per_kwh = total_emissions / (demand_mwh * 1000.0) if demand_mwh > 0 else 0.0
+        savings_percent = (
+            renewable_savings / (total_emissions + renewable_savings) * 100.0
+            if (total_emissions + renewable_savings) > 0
+            else 0.0
+        )
+
+        return {
+            "components": components,
+            "total_emissions": total_emissions,
+            "generation_mwh": demand_mwh,
+            "renewable_savings": renewable_savings,
+            "emissions_ratio": emissions_ratio,
+            "emissions_per_kwh": emissions_per_kwh,
+            "renewable_savings_percent": savings_percent,
+        }
+
+    @staticmethod
+    def hierarchy_from_totals(totals: Dict) -> Dict:
+        components = totals.get("components") or {}
+        total_emissions = totals.get("total_emissions") or 0.0
+        renewable_savings = totals.get("renewable_savings") or 0.0
+        return {
+            "level1": {
+                "fossil_emissions": round(total_emissions, 2),
+                "renewable_emissions_savings": round(renewable_savings, 2),
+            },
+            "level2": {
+                "fossil_emissions": {
+                    key: round(value, 2)
+                    for key, value in components.items()
+                },
+                "renewable_emissions_savings": {
+                    "renewables": round(renewable_savings, 2),
+                },
+            },
+        }

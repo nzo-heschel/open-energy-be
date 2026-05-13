@@ -14,11 +14,6 @@ load_dotenv()
 router = APIRouter(prefix="/co2", tags=["CO2"])
 
 
-# NZO publishes a per-fuel emission rate (tons CO2/h) for every 5-min slot.
-# Summing those rates and dividing by 12 gives total tons CO2 for the period.
-_FOSSIL_KEYS = ("co2_coal", "co2_gas", "co2_diesel", "co2_fuel_oil", "co2_methanol")
-
-
 @router.get("/emissions-ratio")
 async def get_emissions_ratio(
     start_date: Optional[str] = None,
@@ -51,22 +46,14 @@ async def get_emissions_ratio(
         if not raw:
             raise ValueError("No CO2 samples returned for the selected period.")
 
-        total_fossil_tons = sum(
-            CO2Processor.sum_samples_divide_by_12(raw, k) for k in _FOSSIL_KEYS
-        )
-        total_demand_mwh = CO2Processor.sum_samples_divide_by_12(raw, "co2_current_demand")
-
-        if total_demand_mwh <= 0:
-            ratio_per_mwh = 0.0
-        else:
-            ratio_per_mwh = total_fossil_tons / total_demand_mwh
+        totals = CO2Processor.aggregate_totals(raw)
 
         return {
-            "total": round(ratio_per_mwh, 4),
+            "total": round(totals["emissions_ratio"], 4),
             "unit": "tons CO2/MWh",
-            "total_emissions": round(total_fossil_tons, 2),
+            "total_emissions": round(totals["total_emissions"], 2),
             "total_emissions_unit": "tons CO2",
-            "total_generation_mwh": round(total_demand_mwh, 2),
+            "total_generation_mwh": round(totals["generation_mwh"], 2),
             "start_date": start_dt.date().isoformat(),
             "end_date": end_dt.date().isoformat(),
         }

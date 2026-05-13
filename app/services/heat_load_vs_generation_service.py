@@ -40,6 +40,7 @@ STATION_ALIASES = {
         "tel aviv - coast",
         "tel aviv coast",
         "tel aviv, coast",
+        "תל-אביב, חוף",
         "תל אביב, חוף",
         "תל אביב חוף",
     ],
@@ -127,6 +128,20 @@ class HeatLoadVsGenerationService:
         return lookup
 
     @staticmethod
+    def _find_column(columns, tokens: List[str], fallback_index: int) -> str | None:
+        normalized_tokens = [
+            HeatLoadVsGenerationService._normalize_station_name(token)
+            for token in tokens
+        ]
+        for column in columns:
+            normalized_column = HeatLoadVsGenerationService._normalize_station_name(str(column))
+            if any(token and token in normalized_column for token in normalized_tokens):
+                return column
+        if len(columns) > fallback_index:
+            return columns[fallback_index]
+        return None
+
+    @staticmethod
     def _load_weather_dataframe(start_dt: datetime, end_dt: datetime) -> Tuple[pd.DataFrame, List[str]]:
         csv_path = HeatLoadVsGenerationService._resolve_csv_path(start_dt, end_dt)
         try:
@@ -134,20 +149,48 @@ class HeatLoadVsGenerationService:
         except UnicodeDecodeError:
             df = pd.read_csv(csv_path, encoding="latin1")
 
-        expected_cols = ["תחנה", "תאריך ושעה (שעון עולמי)", "לחות יחסית (%)", "טמפרטורה (C°)"]
-        missing = [col for col in expected_cols if col not in df.columns]
+        station_col = HeatLoadVsGenerationService._find_column(
+            df.columns,
+            ["station", "תחנה"],
+            fallback_index=0,
+        )
+        timestamp_col = HeatLoadVsGenerationService._find_column(
+            df.columns,
+            ["date", "time", "תאריך", "שעה"],
+            fallback_index=1,
+        )
+        humidity_col = HeatLoadVsGenerationService._find_column(
+            df.columns,
+            ["humidity", "relative", "לחות"],
+            fallback_index=2,
+        )
+        temperature_col = HeatLoadVsGenerationService._find_column(
+            df.columns,
+            ["temperature", "temp", "טמפרטורה"],
+            fallback_index=3,
+        )
+        missing = [
+            name
+            for name, column in {
+                "station": station_col,
+                "timestamp": timestamp_col,
+                "relative_humidity": humidity_col,
+                "temperature_c": temperature_col,
+            }.items()
+            if column is None
+        ]
         if missing:
             raise HTTPException(
                 status_code=424,
-                detail=f"Heat load CSV format is invalid. Missing columns: {missing}",
+                detail=f"Heat load CSV format is invalid. Could not identify columns: {missing}",
             )
 
         weather = df.rename(
             columns={
-                "תחנה": "station_raw",
-                "תאריך ושעה (שעון עולמי)": "timestamp_utc",
-                "לחות יחסית (%)": "relative_humidity",
-                "טמפרטורה (C°)": "temperature_c",
+                station_col: "station_raw",
+                timestamp_col: "timestamp_utc",
+                humidity_col: "relative_humidity",
+                temperature_col: "temperature_c",
             }
         ).copy()
 
@@ -165,7 +208,7 @@ class HeatLoadVsGenerationService:
         weather["station_key"] = weather["station_normalized"].map(station_lookup)
         weather = weather.dropna(subset=["station_key"])
 
-        weather = weather[(weather["timestamp_utc"] >= start_dt) & (weather["timestamp_utc"] <= (end_dt + timedelta(days=1)))]
+        weather = weather[(weather["timestamp_utc"] >= start_dt) & (weather["timestamp_utc"] <= end_dt)]
         if weather.empty:
             raise HTTPException(
                 status_code=404,
@@ -214,7 +257,7 @@ class HeatLoadVsGenerationService:
                     continue
             if ts is None:
                 continue
-            if ts < start_dt or ts > end_dt + timedelta(days=1):
+            if ts < start_dt or ts > end_dt:
                 continue
 
             total_generation = sum(

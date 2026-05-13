@@ -70,40 +70,14 @@ async def get_emissions_mix(
         
         # AGGREGATE TOTALS FOR PIE CHART
         
-        total_coal = 0.0
-        total_gas = 0.0
-        total_diesel = 0.0
-        total_emissions_raw = 0.0
-        total_demand = 0.0  # For emissions per kWh calculation
-        total_ratio_sum = 0.0  # Sum of co2_ratio values for calculating emissions avoided
-
-        for sample in raw:
-            coal = CO2Processor._as_float(sample.get("co2_coal", 0)) or 0
-            gas = CO2Processor._as_float(sample.get("co2_gas", 0)) or 0
-            diesel = CO2Processor._as_float(sample.get("co2_diesel", 0)) or 0
-            demand = CO2Processor._as_float(sample.get("co2_current_demand", 0)) or 0
-            ratio = CO2Processor._as_float(sample.get("co2_ratio", 0)) or 0
-            
-            total_coal += coal
-            total_gas += gas
-            total_diesel += diesel
-            total_emissions_raw += coal + gas + diesel
-            total_demand += demand
-            total_ratio_sum += ratio
-
-        # Divide by 12 as per requirement (12 samples per hour)
-        total_coal = total_coal / 12.0
-        total_gas = total_gas / 12.0
-        total_diesel = total_diesel / 12.0
-        total_demand = total_demand / 12.0
-        total_ratio_sum = total_ratio_sum / 12.0
-
-        # Total emissions (excluding mazut and methanol as per requirement)
-        total_emissions = total_emissions_raw / 12.0
-
-        # Emissions per kWh (convert MWh to kWh: multiply demand by 1000)
-        total_kwh = total_demand * 1000  # MWh to kWh
-        emissions_per_kwh = (total_emissions / total_kwh) if total_kwh > 0 else 0
+        totals = CO2Processor.aggregate_totals(raw)
+        components = totals["components"]
+        total_coal = components["coal"]
+        total_gas = components["natural_gas"]
+        total_diesel = components["diesel"]
+        total_emissions = totals["total_emissions"]
+        total_demand = totals["generation_mwh"]
+        emissions_per_kwh = totals["emissions_per_kwh"]
 
         
         # PIE CHART DATA
@@ -132,24 +106,17 @@ async def get_emissions_mix(
         time_series = _build_time_series(raw, view, start_dt, end_dt)
 
         
-        # INFOGRAPHICS DATA
-        # Calculate avoided emissions using a baseline intensity (approx 0.55 tons/MWh for fossil grid)
-        # Avoided = (Total Demand * Baseline) - Actual Emissions
-        baseline_intensity = 0.55
-        emissions_avoided = (total_demand * baseline_intensity) - total_emissions
-        if emissions_avoided < 0:
-            emissions_avoided = 0.0
-
         infographics = {
             "total_emissions_excluding_renewables": {
                 "value": round(total_emissions, 2),
                 "unit": "tons CO2",
-                "description": "Total CO2 emissions from fossil fuels (coal + gas + diesel)"
+                "description": "Total CO2 emissions from fossil fuels (coal + gas + diesel + fuel oil + methanol)"
             },
             "emissions_avoided_through_renewables": {
-                "value": round(emissions_avoided, 2),
+                "value": round(totals["renewable_savings"], 2),
                 "unit": "tons CO2",
-                "description": "Estimated CO2 emissions avoided due to renewable energy generation (assuming 0.55t/MWh baseline)"
+                "percentage_of_actual_plus_savings": round(totals["renewable_savings_percent"], 2),
+                "description": "CO2 emissions savings from renewable generation, using the source Renewables field"
             },
         }
 
@@ -167,6 +134,7 @@ async def get_emissions_mix(
             "total_generation_mwh": round(total_demand, 2),
             "pie_chart": pie_chart,
             "infographics": infographics,
+            **CO2Processor.hierarchy_from_totals(totals),
             "time_series": time_series,
         }
 
@@ -240,13 +208,19 @@ def _build_time_series(raw: List[Dict], view: ViewFilter, start_dt: datetime, en
         coal = CO2Processor._as_float(sample.get("co2_coal", 0)) or 0
         gas = CO2Processor._as_float(sample.get("co2_gas", 0)) or 0
         diesel = CO2Processor._as_float(sample.get("co2_diesel", 0)) or 0
+        fuel_oil = CO2Processor._as_float(sample.get("co2_fuel_oil", 0)) or 0
+        methanol = CO2Processor._as_float(sample.get("co2_methanol", 0)) or 0
         demand = CO2Processor._as_float(sample.get("co2_current_demand", 0)) or 0
+        savings = CO2Processor._as_float(sample.get("co2_renewables", 0)) or 0
 
         buckets[bucket_key]["coal"] += coal
         buckets[bucket_key]["natural_gas"] += gas
         buckets[bucket_key]["diesel"] += diesel
-        buckets[bucket_key]["total"] += coal + gas + diesel
+        buckets[bucket_key]["fuel_oil"] = buckets[bucket_key].get("fuel_oil", 0.0) + fuel_oil
+        buckets[bucket_key]["methanol"] = buckets[bucket_key].get("methanol", 0.0) + methanol
+        buckets[bucket_key]["total"] += coal + gas + diesel + fuel_oil + methanol
         buckets[bucket_key]["demand"] += demand
+        buckets[bucket_key]["savings"] = buckets[bucket_key].get("savings", 0.0) + savings
         buckets[bucket_key]["sample_count"] += 1
 
     # Convert to list and apply /12 calculation
@@ -257,8 +231,11 @@ def _build_time_series(raw: List[Dict], view: ViewFilter, start_dt: datetime, en
         coal = bucket["coal"] / 12.0
         gas = bucket["natural_gas"] / 12.0
         diesel = bucket["diesel"] / 12.0
+        fuel_oil = bucket.get("fuel_oil", 0.0) / 12.0
+        methanol = bucket.get("methanol", 0.0) / 12.0
         total = bucket["total"] / 12.0
         demand = bucket["demand"] / 12.0
+        savings = bucket.get("savings", 0.0) / 12.0
         
         # Emissions per kWh for this period
         kwh = demand * 1000
@@ -270,9 +247,29 @@ def _build_time_series(raw: List[Dict], view: ViewFilter, start_dt: datetime, en
             "coal": round(coal, 2),
             "natural_gas": round(gas, 2),
             "diesel": round(diesel, 2),
+            "fuel_oil": round(fuel_oil, 2),
+            "methanol": round(methanol, 2),
             "total_emissions": round(total, 2),
+            "emissions_savings": round(savings, 2),
             "generation_mwh": round(demand, 2),
+            "emissions_ratio": round(total / demand, 4) if demand > 0 else 0,
             "emissions_per_kwh": round(emissions_per_kwh, 6),
+            "level1": {
+                "fossil_emissions": round(total, 2),
+                "renewable_emissions_savings": round(savings, 2),
+            },
+            "level2": {
+                "fossil_emissions": {
+                    "coal": round(coal, 2),
+                    "fuel_oil": round(fuel_oil, 2),
+                    "natural_gas": round(gas, 2),
+                    "diesel": round(diesel, 2),
+                    "methanol": round(methanol, 2),
+                },
+                "renewable_emissions_savings": {
+                    "renewables": round(savings, 2),
+                },
+            },
             "unit": "tons CO2",
         })
 

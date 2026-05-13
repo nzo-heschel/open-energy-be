@@ -55,6 +55,20 @@ def _clean_label(value: Any, fallback: str) -> str:
     return text or fallback
 
 
+def _parse_year(value: Any) -> Optional[int]:
+    if pd.isna(value):
+        return None
+    if isinstance(value, (int, float)):
+        year = int(value)
+        return year if 1900 <= year <= 2100 else None
+    text = str(value).strip()
+    if re.fullmatch(r"\d{4}", text):
+        return int(text)
+    if re.fullmatch(r"\d{4}\.0+", text):
+        return int(float(text))
+    return None
+
+
 def _read_diagram1_csv(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, str], Optional[float]]:
     """Parse the yearly Israel forecast CSV."""
     df = pd.read_csv(path, encoding="utf-8-sig")
@@ -95,8 +109,8 @@ def _read_diagram1_csv(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, str]
 
     for _, row in df.iterrows():
         year_value = row.get(year_col)
-        year_text = "" if pd.isna(year_value) else str(year_value).strip()
-        if not re.fullmatch(r"\d{4}", year_text):
+        year = _parse_year(year_value)
+        if year is None:
             continue
 
         if realistic_factor is None and factor_col:
@@ -106,7 +120,7 @@ def _read_diagram1_csv(path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, str]
 
         data_points.append(
             {
-                "year": int(year_text),
+                "year": year,
                 "renewable_share_percent": _to_percent(row.get(renewable_col)) if renewable_col else 0.0,
                 "realistic_forecast_percent": _to_percent(row.get(realistic_col)) if realistic_col else 0.0,
                 "ministry_target_percent": _to_percent(row.get(ministry_col)) if ministry_col else 0.0,
@@ -218,6 +232,10 @@ class Delivery4ForecastsService:
             )
 
         points, labels, realistic_factor = _read_diagram1_csv(path)
+        if not points:
+            raise ValueError(
+                f"Israel renewable forecast CSV parsed with no data rows: {path.name}"
+            )
         return {
             "diagram_id": "israel_renewable_forecast",
             "title": "Renewables forecast trajectory in Israel",
@@ -249,6 +267,10 @@ class Delivery4ForecastsService:
             )
 
         regions_raw, column_labels_from_sheet, source_notes = _read_diagram2_csv(path)
+        if not regions_raw:
+            raise ValueError(
+                f"International renewable comparison CSV parsed with no region rows: {path.name}"
+            )
         missing_solar = (
             [r["region"] for r in regions_raw if not r["solar_data_available"]]
             if include_solar_share
