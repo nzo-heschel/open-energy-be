@@ -202,7 +202,7 @@ def _build_combined_time_series(raw: List[Dict], granularity: str) -> List[Dict]
     series = []
     for key in sorted(buckets.keys()):
         b = buckets[key]
-        
+
         # Divide by 12 aggregation rule for ALL summed values
         coal = b["coal"] / 12.0
         gas = b["natural_gas"] / 12.0
@@ -212,8 +212,11 @@ def _build_combined_time_series(raw: List[Dict], granularity: str) -> List[Dict]
         total_emissions = b["total_emissions"] / 12.0
         demand = b["demand"] / 12.0
         savings = b["savings"] / 12.0
-        emissions_ratio = total_emissions / demand if demand > 0 else 0.0
-        
+        # Ratio: divide raw 5-min sums, then apply /12 as the last step (client spec).
+        emissions_ratio = (
+            (b["total_emissions"] / b["demand"]) / 12.0 if b["demand"] > 0 else 0.0
+        )
+
         # Emissions per kWh
         kwh = demand * 1000.0
         emissions_per_kwh = (total_emissions / kwh) if kwh > 0 else 0

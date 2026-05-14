@@ -69,12 +69,10 @@ class CO2Processor:
 
         NZO/NOGA values are rates for 5-minute samples. Summing a field and
         dividing by 12 converts the sampled rates into tons CO2 or MWh for
-        the selected period. The emissions ratio must be weighted:
+        the selected period.
 
-            total fossil emissions / total demand
-
-        It must not be calculated by summing or averaging the source Co2Ratio
-        samples, because that over-weights low-demand periods.
+        The emissions ratio is computed with the /12 applied LAST per client
+        spec: sum(fossil emissions) / sum(current demand), then /12.
         """
         components = {
             label: CO2Processor.sum_samples_divide_by_12(samples, field)
@@ -83,7 +81,20 @@ class CO2Processor:
         total_emissions = sum(components.values())
         demand_mwh = CO2Processor.sum_samples_divide_by_12(samples, "co2_current_demand")
         renewable_savings = CO2Processor.sum_samples_divide_by_12(samples, "co2_renewables")
-        emissions_ratio = total_emissions / demand_mwh if demand_mwh > 0 else 0.0
+
+        # Ratio: keep raw 5-min sums, divide them, then apply /12 as the last step.
+        raw_fossil_sum = sum(
+            CO2Processor._as_float(row.get(field)) or 0.0
+            for row in samples
+            for field in FOSSIL_EMISSION_FIELDS.values()
+        )
+        raw_demand_sum = sum(
+            CO2Processor._as_float(row.get("co2_current_demand")) or 0.0
+            for row in samples
+        )
+        emissions_ratio = (
+            (raw_fossil_sum / raw_demand_sum) / 12.0 if raw_demand_sum > 0 else 0.0
+        )
         emissions_per_kwh = total_emissions / (demand_mwh * 1000.0) if demand_mwh > 0 else 0.0
         savings_percent = (
             renewable_savings / (total_emissions + renewable_savings) * 100.0

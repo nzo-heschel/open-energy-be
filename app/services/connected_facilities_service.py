@@ -92,11 +92,13 @@ _SIZE_BRACKETS_MW = [
 
 def _assign_size_bracket(capacity_mw: float) -> str:
     """Assign a human-readable size category based on capacity in MW.
-    Lower bound is exclusive, upper bound is inclusive (except the first bracket).
+    Brackets are non-overlapping and cover the full range with no gaps:
+    first bracket includes both endpoints (0 ≤ x ≤ high); subsequent
+    brackets are (low, high] (exclusive low, inclusive high).
     """
     for i, (low, high, label) in enumerate(_SIZE_BRACKETS_MW):
         if i == 0:
-            if 0 <= capacity_mw <= low + (high - low) - 0.000001:
+            if 0 <= capacity_mw <= high:
                 return label
         else:
             if low < capacity_mw <= high:

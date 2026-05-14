@@ -105,12 +105,13 @@ _SIZE_BRACKETS_MW = [
 
 def _assign_size_bracket(capacity_mw: float) -> str:
     """Assign a human-readable size category based on capacity in MW.
-    Lower bound is exclusive, upper bound is inclusive (except the first bracket).
+    Brackets are non-overlapping and cover the full range with no gaps:
+    first bracket includes both endpoints (0 ≤ x ≤ high); subsequent
+    brackets are (low, high] (exclusive low, inclusive high).
     """
     for i, (low, high, label) in enumerate(_SIZE_BRACKETS_MW):
         if i == 0:
-            # First bracket: 0 to 16 kW inclusive
-            if 0 <= capacity_mw <= low + (high - low) - 0.000001:
+            if 0 <= capacity_mw <= high:
                 return label
         else:
             if low < capacity_mw <= high:
@@ -374,11 +375,15 @@ class DistributorResponsesService:
     def get_response_capacity_by_district(
         year: Optional[int] = None,
         technology: Optional[str] = None,
-        include_cancelled: bool = False,
+        include_cancelled: bool = True,
     ) -> Dict:
         """
         Delivery 2 – Endpoint 14 (Row 21):
         Response capacity divided by district.
+
+        Default includes every row in the source file so per-region totals
+        match what a manual sum of the mehubarim CSV produces; pass
+        include_cancelled=False to exclude cancelled orders.
         """
         df = DistributorResponsesService._load_dataframe()
 

@@ -150,7 +150,7 @@ async def export_response_capacity_by_size(
 async def get_response_capacity_by_district(
     year: int | None = None,
     technology: str | None = None,
-    include_cancelled: bool = False,
+    include_cancelled: bool = True,
 ):
     """
     Delivery 2 – Row 21: Response capacity divided by district.
@@ -175,7 +175,7 @@ async def get_response_capacity_by_district(
 async def export_response_capacity_by_district(
     year: int | None = None,
     technology: str | None = None,
-    include_cancelled: bool = False,
+    include_cancelled: bool = True,
 ):
     """Export response capacity by district to Excel."""
     try:
