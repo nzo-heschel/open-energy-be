@@ -89,17 +89,15 @@ _MUNICIPAL_STATUS_MAP = {
     "אחר": "Other",
 }
 
-# Capacity size brackets (MW) used for endpoint 13
-# Ranges are non-overlapping: boundary values fall into the HIGHER bracket.
-# e.g. exactly 0.016 MW (16 kW) goes into "17–50 kW", not "Up to 16 kW".
+# Capacity size brackets (MW) used for endpoint 13.
+# Client-defined tiers (kW): 0-200 | 201-630 | 631-5000 | 5001+
+# Ranges are non-overlapping with no gaps; first bracket is inclusive of
+# both endpoints, the rest are (low, high].
 _SIZE_BRACKETS_MW = [
-    (0,     0.016,         "Up to 16 kW"),
-    (0.016, 0.050,         "17–50 kW"),
-    (0.050, 0.200,         "51–200 kW"),
-    (0.200, 1.0,           "201 kW–1 MW"),
-    (1.0,   5.0,           "1–5 MW"),
-    (5.0,   50.0,          "5–50 MW"),
-    (50.0,  float("inf"),  "50+ MW"),
+    (0,     0.200,         "0-200 kW"),
+    (0.200, 0.630,         "201-630 kW"),
+    (0.630, 5.0,           "631-5000 kW"),
+    (5.0,   float("inf"),  "5001 kW +"),
 ]
 
 
