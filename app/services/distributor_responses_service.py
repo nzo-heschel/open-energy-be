@@ -205,15 +205,19 @@ class DistributorResponsesService:
         district: Optional[str] = None,
         technology: Optional[str] = None,
         response_type: Optional[str] = None,
-        include_cancelled: bool = False,
+        include_cancelled: bool = True,
     ) -> Dict:
         """
         Delivery 2 – Endpoint 12 (Row 19):
         Response capacity divided by time period.
+
+        Includes every row in the source file by default (consistent with
+        the by-size and by-district graphs) so totals match a manual sum of
+        the teshuvotmehalek CSV; pass include_cancelled=False to exclude
+        cancelled orders.
         """
         df = DistributorResponsesService._load_dataframe()
 
-        # Filter out cancelled orders by default
         if not include_cancelled and "cancellations" in df.columns:
             df = df[df["cancellations"] == "Non-cancelled"]
 
@@ -287,12 +291,17 @@ class DistributorResponsesService:
         year: Optional[int] = None,
         district: Optional[str] = None,
         response_type: Optional[str] = "Positive",
-        include_cancelled: bool = False,
+        include_cancelled: bool = True,
     ) -> Dict:
         """
         Delivery 2 – Endpoint 13 (Row 20):
         Response capacity divided by facility size in kilowatts.
         Defaults to Positive responses only (client requirement for Diagram 5.2).
+
+        Includes every row in the source file by default (same as the
+        by-district graph) so totals match a manual sum of the
+        teshuvotmehalek CSV; pass include_cancelled=False to exclude
+        cancelled orders.
         """
         df = DistributorResponsesService._load_dataframe()
 

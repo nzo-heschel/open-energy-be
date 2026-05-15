@@ -23,7 +23,7 @@ async def get_response_capacity_by_period(
     district: str | None = None,
     technology: str | None = None,
     response_type: str | None = None,
-    include_cancelled: bool = False,
+    include_cancelled: bool = True,
 ):
     """
     Delivery 2 – Row 19: Response capacity divided by time period.
@@ -34,7 +34,7 @@ async def get_response_capacity_by_period(
       - district: Filter by district (e.g. Jerusalem, North, South, Haifa, Center, Tel Aviv)
       - technology: Filter by technology (Photovoltaic, Wind, Other)
       - response_type: Filter by response (Positive, Partial Positive, Limited Positive, Negative)
-      - include_cancelled: Include cancelled orders (default: false)
+      - include_cancelled: Include cancelled orders (default: true, matches manual file sums)
     """
     try:
         return DistributorResponsesService.get_response_capacity_by_period(
@@ -59,7 +59,7 @@ async def export_response_capacity_by_period(
     district: str | None = None,
     technology: str | None = None,
     response_type: str | None = None,
-    include_cancelled: bool = False,
+    include_cancelled: bool = True,
 ):
     """Export response capacity by period to Excel."""
     try:
@@ -89,7 +89,7 @@ async def get_response_capacity_by_size(
     year: int | None = None,
     district: str | None = None,
     response_type: str | None = "Positive",
-    include_cancelled: bool = False,
+    include_cancelled: bool = True,
 ):
     """
     Delivery 2 – Row 20: Response capacity divided by facility size (kilowatt).
@@ -121,7 +121,7 @@ async def export_response_capacity_by_size(
     year: int | None = None,
     district: str | None = None,
     response_type: str | None = "Positive",
-    include_cancelled: bool = False,
+    include_cancelled: bool = True,
 ):
     """Export response capacity by facility size to Excel."""
     try:
