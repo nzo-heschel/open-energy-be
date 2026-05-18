@@ -90,14 +90,29 @@ _MUNICIPAL_STATUS_MAP = {
 }
 
 # Capacity size brackets (MW) used for endpoint 13.
-# Client-defined tiers (kW): 0-200 | 201-630 | 631-5000 | 5001+
-# Ranges are non-overlapping with no gaps; first bracket is inclusive of
-# both endpoints, the rest are (low, high].
+#
+# These MUST mirror the Electricity Authority ("רשות החשמל") dashboard
+# separation exactly, so our charts validate 1:1 against the gov source:
+#   0-15 | 15-100 | 100-200 | 200-630 | 630-5000 | 5000-16000 (kW)
+#
+# The top bucket is intentionally OPEN-ENDED (5 MW → ∞) even though the gov
+# label reads "5000-16000": that label is just Power BI auto-labelling the
+# last bin by the max value in their filtered view. Hard-capping at 16 MW
+# would silently drop every facility above 16 MW into "Unknown" and break
+# the totals (teshuvotmehalek has ~7,900 MW / 323 rows above 16 MW).
+# Keeping it open-ended guarantees totals always reconcile with a manual
+# file sum.
+#
+# Ranges are non-overlapping with no gaps; the first bracket is inclusive
+# of both endpoints, the rest are (low, high]. Because the last bracket is
+# open-ended, _assign_size_bracket never returns "Unknown".
 _SIZE_BRACKETS_MW = [
-    (0,     0.200,         "0-200 kW"),
-    (0.200, 0.630,         "201-630 kW"),
-    (0.630, 5.0,           "631-5000 kW"),
-    (5.0,   float("inf"),  "5001 kW +"),
+    (0,     0.015,         "0-15 kW"),
+    (0.015, 0.100,         "15-100 kW"),
+    (0.100, 0.200,         "100-200 kW"),
+    (0.200, 0.630,         "200-630 kW"),
+    (0.630, 5.0,           "630-5000 kW"),
+    (5.0,   float("inf"),  "5000-16000 kW"),
 ]
 
 
