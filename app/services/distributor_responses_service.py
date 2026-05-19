@@ -415,11 +415,41 @@ class DistributorResponsesService:
             .sort_values("total_mw", ascending=False)
         )
 
+        # Response-type breakdown per district. The FE "Answers from the
+        # department by district" chart stacks each district bar by
+        # distributor_response (Positive / Partial Positive / Limited
+        # Positive / Negative). Without this the FE has no correct per-type
+        # data and the segments don't match the Authority dashboard, even
+        # though the district totals do.
+        response_order = ["Positive", "Partial Positive", "Limited Positive", "Negative"]
+        district_response: Dict[str, Dict[str, Dict[str, float]]] = {}
+        if "distributor_response" in df.columns:
+            dr = (
+                df.groupby(["district", "distributor_response"])["capacity_mw"]
+                .agg(total_mw="sum", count="count")
+                .reset_index()
+            )
+            for dist, grp in dr.groupby("district"):
+                by_type = {
+                    row["distributor_response"]: {
+                        "total_mw": round(row["total_mw"], 3),
+                        "count": int(row["count"]),
+                    }
+                    for _, row in grp.iterrows()
+                }
+                # Emit all four types in canonical order, zero-filled, so the
+                # FE can stack consistently across districts.
+                district_response[dist] = {
+                    rt: by_type.get(rt, {"total_mw": 0.0, "count": 0})
+                    for rt in response_order
+                }
+
         series = [
             {
                 "district": row["district"],
                 "total_mw": round(row["total_mw"], 3),
                 "request_count": int(row["request_count"]),
+                "response_breakdown": district_response.get(row["district"], {}),
             }
             for _, row in grouped.iterrows()
         ]
@@ -449,6 +479,7 @@ class DistributorResponsesService:
             },
             "series": series,
             "district_technology_breakdown": breakdown,
+            "district_response_breakdown": district_response,
         }
 
     # ------------------------------------------------------------------
