@@ -87,19 +87,36 @@ class HeatLoadVsGenerationService:
                 detail=f"HEAT_LOAD_CSV_PATH is set but file was not found: {path}",
             )
 
+        from app.services.csv_downloader_service import _file_has_data_rows
+
         try:
-            return ensure_fresh_ims_weather_file(start_dt, end_dt)
+            resolved = ensure_fresh_ims_weather_file(start_dt, end_dt)
+            # Never hand pandas an empty/header-only file — that surfaces as
+            # the cryptic "No columns to parse from file". Treat it as a
+            # miss and fall through to the local-glob / clear-error path.
+            if _file_has_data_rows(resolved):
+                return resolved
+            logger.warning(
+                "IMS weather file %s has no data rows; falling back to local data_*.csv",
+                resolved.name,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("IMS weather auto-refresh failed, falling back to local data_*.csv: %s", exc)
 
         root = HeatLoadVsGenerationService._project_root()
-        candidates = sorted(root.glob("data_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = [
+            p for p in sorted(root.glob("data_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if _file_has_data_rows(p)
+        ]
         if not candidates:
-            candidates = sorted(
-                (root / "data_files").glob("data_*.csv"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
+            candidates = [
+                p for p in sorted(
+                    (root / "data_files").glob("data_*.csv"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if _file_has_data_rows(p)
+            ]
         if not candidates:
             raise HTTPException(
                 status_code=428,

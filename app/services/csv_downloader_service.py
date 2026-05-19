@@ -593,18 +593,69 @@ def download_ims_weather_file(
     return dest, ims_meta
 
 
+def _file_has_data_rows(path: Path) -> bool:
+    """True if *path* exists and has a header plus at least one data row.
+
+    A 0-byte or header-only CSV makes pandas raise the cryptic
+    "No columns to parse from file"/"EmptyDataError". We must never treat
+    such a file as a usable weather source.
+    """
+    try:
+        if not path.exists() or path.stat().st_size == 0:
+            return False
+        with path.open("r", encoding="utf-8-sig", errors="ignore") as fh:
+            nonblank = 0
+            for line in fh:
+                if line.strip():
+                    nonblank += 1
+                    if nonblank >= 2:  # header + >=1 data row
+                        return True
+        return False
+    except OSError:
+        return False
+
+
+def _latest_nonempty_ims_file() -> Optional[Path]:
+    """Newest IMS weather file (by mtime) that actually contains data rows.
+
+    Skips empty/corrupt files so a previously-saved bad file can never
+    poison the fallback path.
+    """
+    base = DATASET_BASE_NAMES.get(
+        DataFileSource.IMS_HEAT_LOAD_WEATHER.value,
+        DataFileSource.IMS_HEAT_LOAD_WEATHER.value,
+    )
+    candidates = sorted(
+        DATA_FILES_DIR.glob(f"{base}_*.*"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        if _file_has_data_rows(path):
+            return path
+    return None
+
+
 def ensure_fresh_ims_weather_file(
     start_dt: datetime,
     end_dt: datetime,
 ) -> Path:
-    existing_path = _latest_file(DataFileSource.IMS_HEAT_LOAD_WEATHER.value)
+    # Only fall back to an existing file that is actually parseable. The
+    # newest file by mtime may be a 0-byte/header-only artefact from an
+    # earlier failed save; using it would crash heat-load with
+    # "No columns to parse from file".
+    existing_path = _latest_nonempty_ims_file()
     try:
         dest, _ = download_ims_weather_file(start_dt, end_dt)
+        if not _file_has_data_rows(dest):
+            raise ValueError(
+                f"IMS download produced an empty weather file ({dest.name})."
+            )
         return dest
     except Exception as exc:  # noqa: BLE001
         if existing_path:
             logger.warning(
-                "IMS range download failed, using existing weather file %s: %s",
+                "IMS range download failed, using last good weather file %s: %s",
                 existing_path.name,
                 exc,
             )
