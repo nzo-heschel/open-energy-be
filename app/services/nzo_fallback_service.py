@@ -23,7 +23,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-NZO_BASE_URL = "https://data.nzo.org.il:8080/get"
+NZO_BASE_URL = "https://shai.nzo.org.il:8080/get"
 NZO_TIME_RESOLUTION_FIELD = "_nzo_time_resolution"
 
 # Successful NZO responses are cached for this long. Same params -> same payload,
