@@ -259,11 +259,27 @@ class SMPProductionService:
             to_noga_date(end_dt),
             token,
         )
-        demand_data = await DemandService.fetch_demand_data(
-            to_noga_date(start_dt),
-            to_noga_date(end_dt),
-            None,
-        )
+        # Demand source MUST be NZO 5-min energy for this chart. The client
+        # validates against the gov NZO source (shai.nzo.org.il) which gives
+        # ~8674.6 at 00:00 for May 18 — NOGA's own demand endpoint returns a
+        # near-identical-but-not-equal value (~8668.6), and any divergence
+        # makes the client's 1:1 check fail. We try NZO first and only fall
+        # back to NOGA-via-DemandService if NZO is unreachable, so the chart
+        # never crashes even in a worst-case upstream outage.
+        from app.services.nzo_fallback_service import NZOFallbackService
+
+        try:
+            demand_data = await NZOFallbackService.fetch_demand_data(
+                start_date=to_noga_date(start_dt),
+                end_date=to_noga_date(end_dt),
+                time_resolution="all",
+            )
+        except Exception:
+            demand_data = await DemandService.fetch_demand_data(
+                to_noga_date(start_dt),
+                to_noga_date(end_dt),
+                None,
+            )
         # SMP is half-hourly: each price represents [T, T+30min). Build the
         # demand lookup as the *mean* of the underlying 5-min demand samples
         # in each 30-min window (not the snapshot at T, which made 00:00

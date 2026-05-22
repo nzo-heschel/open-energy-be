@@ -25,11 +25,24 @@ async def get_smp_data(start_date: str = None, end_date: str = None) -> Dict:
             to_noga_date(end_dt),
             smp_token,
         )
-        demand_data = await DemandService.fetch_demand_data(
-            to_noga_date(start_dt),
-            to_noga_date(end_dt),
-            demand_token,
-        )
+        # Demand source: NZO 5-min energy stream first, so the chart
+        # reconciles 1:1 with the client's gov-source validation (NOGA's
+        # demand endpoint returns a ~6 MW different value for the same
+        # bin). NOGA-via-DemandService is the safety-net fallback.
+        from app.services.nzo_fallback_service import NZOFallbackService
+
+        try:
+            demand_data = await NZOFallbackService.fetch_demand_data(
+                start_date=to_noga_date(start_dt),
+                end_date=to_noga_date(end_dt),
+                time_resolution="all",
+            )
+        except Exception:
+            demand_data = await DemandService.fetch_demand_data(
+                to_noga_date(start_dt),
+                to_noga_date(end_dt),
+                demand_token,
+            )
         # SMP is half-hourly; pair each bin with the mean demand across the
         # same 30-min window (not a 5-min snapshot at the bin's start).
         # ``net_demand`` in the response is a misnomer — see the long note
