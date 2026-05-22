@@ -138,21 +138,75 @@ class DemandService:
         return data
 
     @staticmethod
-    def to_demand_lookup(demand_data: List[Dict]) -> Dict[str, float]:
+    def to_demand_lookup(
+        demand_data: List[Dict],
+        window_minutes: int | None = None,
+    ) -> Dict[str, float]:
         """
-        Flatten demand payload into a timestamp->demandCurrent mapping.
+        Flatten demand payload into a timestamp -> value lookup.
+
+        ``window_minutes=None`` (default, backwards-compatible) keeps the lookup
+        keyed by the exact sample timestamp — i.e. a 5-min snapshot. This is
+        wrong for charts whose buckets are coarser than the demand resolution:
+        e.g. SMP is half-hourly, so pairing each SMP bin with a single 5-min
+        demand snapshot at the bin's *start* misrepresents the bin (00:00
+        snapshot 8760 MW vs the true 00:00–00:30 average 8674 MW).
+
+        Pass ``window_minutes=W`` to fix this: every demand sample is floored
+        to the start of its W-minute window, and the returned lookup value at
+        each *window anchor* is the **mean of all demand samples falling in
+        [anchor, anchor + W)**. SMP services should pass ``window_minutes=30``
+        because each SMP price represents the half-hour beginning at its
+        timestamp, so the demand paired with it must also span that half-hour.
         """
-        lookup: Dict[str, float] = {}
+        if window_minutes is None:
+            lookup: Dict[str, float] = {}
+            days = demand_data if isinstance(demand_data, list) else demand_data.get("data", [])
+            for day in days:
+                date_str = day.get("date") or day.get("day") or ""
+                samples = day.get("demandData") or day.get("data") or []
+                for sample in samples:
+                    ts = _iso_timestamp(date_str, sample.get("time"))
+                    demand_val = sample.get("demandCurrent") or sample.get("demandUpdated") or sample.get("demandHead")
+                    try:
+                        demand_val = float(demand_val)
+                    except (TypeError, ValueError):
+                        continue
+                    lookup[ts] = demand_val
+            return lookup
+
+        if window_minutes <= 0:
+            raise ValueError("window_minutes must be a positive integer")
+
+        from collections import defaultdict
+        from datetime import datetime as _dt
+
+        buckets: Dict[str, list[float]] = defaultdict(list)
         days = demand_data if isinstance(demand_data, list) else demand_data.get("data", [])
         for day in days:
             date_str = day.get("date") or day.get("day") or ""
             samples = day.get("demandData") or day.get("data") or []
             for sample in samples:
                 ts = _iso_timestamp(date_str, sample.get("time"))
+                try:
+                    dt = _dt.fromisoformat(ts)
+                except ValueError:
+                    continue
                 demand_val = sample.get("demandCurrent") or sample.get("demandUpdated") or sample.get("demandHead")
                 try:
                     demand_val = float(demand_val)
                 except (TypeError, ValueError):
                     continue
-                lookup[ts] = demand_val
-        return lookup
+                # Floor to window boundary; e.g. for 30-min windows the bin
+                # is [00:00, 00:30) — a sample at 00:30 floors to its own
+                # 00:30 anchor (right-exclusive), matching SMP convention.
+                mins = dt.hour * 60 + dt.minute
+                anchor_min = (mins // window_minutes) * window_minutes
+                anchor = dt.replace(
+                    hour=anchor_min // 60,
+                    minute=anchor_min % 60,
+                    second=0,
+                    microsecond=0,
+                )
+                buckets[anchor.isoformat()].append(demand_val)
+        return {anchor: sum(vs) / len(vs) for anchor, vs in buckets.items() if vs}

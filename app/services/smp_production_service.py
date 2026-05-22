@@ -222,7 +222,12 @@ class SMPProductionService:
             to_noga_date(end_dt),
             None,
         )
-        demand_lookup = DemandService.to_demand_lookup(demand_data)
+        # SMP is half-hourly: each price represents [T, T+30min). The demand
+        # we pair with it must span the same half-hour, so average the
+        # underlying 5-min demand samples per window instead of taking a
+        # single snapshot at T (which made 00:00 read 8760 vs the true
+        # 30-min mean 8674.6).
+        demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
 
         days: List[Dict] = []
         if isinstance(raw_data, dict):

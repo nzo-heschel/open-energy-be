@@ -30,7 +30,9 @@ async def get_smp_data(start_date: str = None, end_date: str = None) -> Dict:
             to_noga_date(end_dt),
             demand_token,
         )
-        demand_lookup = DemandService.to_demand_lookup(demand_data)
+        # SMP is half-hourly; pair each bin with the mean demand across the
+        # same 30-min window rather than a 5-min snapshot at the bin's start.
+        demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
         days_delta = (end_dt - start_dt).days
         if days_delta <= 1:
             view = "day"
