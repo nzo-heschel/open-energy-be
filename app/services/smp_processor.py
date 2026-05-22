@@ -99,15 +99,19 @@ class SMPProcessor:
         raw_data: List[Dict],
         include_samples: bool,
         demand_lookup: Dict[str, float] | None = None,
-        renewables_lookup: Dict[str, float] | None = None,
+        renewables_lookup: Dict[str, float] | None = None,  # accepted but unused; see note in _flatten
     ) -> Dict:
         """
         Return SMP price with/without constraints plus net demand averages for charts.
 
-        ``net_demand`` is gross demand minus renewable generation. The SMP
-        samples themselves don't carry demand or renewables (NZO returns
-        only the four price fields), so both come from the windowed lookups
-        built by the caller from the demand/production-mix payload.
+        ``net_demand`` is a misnomer — it carries the raw 30-min mean of
+        ActualDemand (gross demand), NOT demand minus renewables. The
+        client validates this chart by reading ActualDemand averages off
+        the gov NZO source, so this field must publish the same number
+        for 1:1 reconciliation. See the long comment in
+        smp_production_service.fetch_and_process. The ``renewables_lookup``
+        parameter is kept on the signature so existing callers don't have
+        to change, but the value is intentionally ignored.
         """
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -115,7 +119,7 @@ class SMPProcessor:
         else:
             days = raw_data or []
 
-        flattened = SMPProcessor._flatten(days, demand_lookup or {}, renewables_lookup or {})
+        flattened = SMPProcessor._flatten(days, demand_lookup or {})
         day_avg = SMPProcessor._aggregate(flattened, by="day")
         month_avg = SMPProcessor._aggregate(flattened, by="month")
 
@@ -152,12 +156,18 @@ class SMPProcessor:
     def _flatten(
         days: List[Dict],
         demand_lookup: Dict[str, float],
-        renewables_lookup: Dict[str, float] | None = None,
     ) -> List[Dict]:
         """
-        Flatten NOGA daily payload into timestamped samples with price/net demand.
+        Flatten NOGA daily payload into timestamped samples with price/demand.
+
+        Note: the ``net_demand`` field below is a misnomer kept for FE/API
+        contract stability. It carries the raw 30-min mean of ActualDemand
+        (gross demand), NOT demand-minus-renewables. The client validates
+        this chart by comparing to the gov NZO ActualDemand average, so
+        the value must reconcile 1:1 with that. Do NOT re-introduce a
+        renewables subtraction here without first checking with the
+        client — that change has been made and reverted before.
         """
-        renewables_lookup = renewables_lookup or {}
         records: List[Dict] = []
         for day in days:
             date_str = day.get("date") or day.get("day") or ""
@@ -183,11 +193,8 @@ class SMPProcessor:
                 demand_val = _get_first_float(sample, DEMAND_KEYS)
                 if demand_val is None:
                     demand_val = demand_lookup.get(ts)
-                # Renewables: sample first (rare), then windowed lookup (matches SMP bin).
-                renewables_val = _get_first_float(sample, RENEWABLE_KEYS)
-                if renewables_val is None:
-                    renewables_val = renewables_lookup.get(ts)
-                net_demand = demand_val - (renewables_val or 0) if demand_val is not None else None
+                # Misnomer: this is gross ActualDemand. See docstring.
+                net_demand = demand_val
 
                 records.append(
                     {

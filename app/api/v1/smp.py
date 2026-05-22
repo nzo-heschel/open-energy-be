@@ -31,26 +31,12 @@ async def get_smp_data(start_date: str = None, end_date: str = None) -> Dict:
             demand_token,
         )
         # SMP is half-hourly; pair each bin with the mean demand across the
-        # same 30-min window (not a 5-min snapshot at the bin's start). And
-        # ``net_demand`` here must literally be demand minus renewables, so
-        # build a parallel renewables lookup. If the demand payload didn't
-        # carry renewables (NOGA's bare demand endpoint may not), pull them
-        # from the production mix instead.
+        # same 30-min window (not a 5-min snapshot at the bin's start).
+        # ``net_demand`` in the response is a misnomer — see the long note
+        # in smp_production_service.fetch_and_process. It carries the raw
+        # 30-min mean of ActualDemand (gross), not demand-minus-renewables,
+        # because the client validates this chart against gov ActualDemand.
         demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
-        renewables_lookup = DemandService.to_renewables_lookup(demand_data, window_minutes=30)
-        if not renewables_lookup:
-            try:
-                from app.services.noga_service import NogaService
-                from app.services.smp_production_service import SMPProductionService
-
-                energy_rows = await NogaService.fetch_production_mix(
-                    to_noga_date(start_dt), to_noga_date(end_dt), smp_token
-                )
-                renewables_lookup = SMPProductionService._build_renewables_window_lookup(
-                    energy_rows, window_minutes=30
-                )
-            except Exception:
-                renewables_lookup = {}
 
         days_delta = (end_dt - start_dt).days
         if days_delta <= 1:
@@ -65,7 +51,6 @@ async def get_smp_data(start_date: str = None, end_date: str = None) -> Dict:
             raw_smp_data,
             include_samples=include_samples,
             demand_lookup=demand_lookup,
-            renewables_lookup=renewables_lookup,
         )
         has_prices = smp_data.get("chart_with_constraints") or smp_data.get("chart_without_constraints")
         if not has_prices:

@@ -269,35 +269,17 @@ class SMPProductionService:
         # in each 30-min window (not the snapshot at T, which made 00:00
         # read 8760 vs the true 30-min mean ~8674).
         demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
-        # ``net_demand`` in this response is "demand minus renewable
-        # generation" — that's what the chart label promises and the FE
-        # uses for the SMP-vs-net-demand scatter. Build a parallel windowed
-        # renewables lookup so we can actually compute it. If the demand
-        # payload didn't carry renewables (NOGA's bare demand endpoint
-        # doesn't expose them) we have to fetch the full production mix
-        # and build the lookup from there — otherwise we'd silently keep
-        # serving gross demand under a "net" label, which is what the
-        # client just flagged.
-        renewables_lookup = DemandService.to_renewables_lookup(demand_data, window_minutes=30)
-        if not renewables_lookup:
-            try:
-                from app.services.noga_service import NogaService
-
-                energy_rows = await NogaService.fetch_production_mix(
-                    to_noga_date(start_dt),
-                    to_noga_date(end_dt),
-                    token,
-                )
-                renewables_lookup = SMPProductionService._build_renewables_window_lookup(
-                    energy_rows, window_minutes=30
-                )
-            except Exception:
-                # If we can't get renewables at all, fall back to gross
-                # demand rather than crashing the chart. This is logged
-                # implicitly via the empty lookup and shouldn't happen on
-                # the production NOGA-first / NZO-fallback paths because
-                # both have access to renewables.
-                renewables_lookup = {}
+        # IMPORTANT — ``net_demand`` here is a misnomer kept for FE/API
+        # contract stability. The client validates this chart by reading
+        # raw ``ActualDemand`` averages from the gov NZO source, so the
+        # value we publish under ``net_demand`` MUST be the 30-min mean of
+        # ActualDemand (gross demand), NOT demand-minus-renewables. A
+        # previous version of this code subtracted renewables — that was
+        # mathematically "net demand" in power-systems jargon but broke
+        # the client's 1:1 validation against the gov data. Do not
+        # re-introduce a renewables subtraction here without first
+        # confirming with the client that they want the field name's
+        # literal meaning rather than the current behavior.
 
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -340,21 +322,10 @@ class SMPProductionService:
                 )
                 if demand_value is None:
                     demand_value = demand_lookup.get(timestamp)
-                # Net demand = gross demand minus renewable generation.
-                # Prefer renewables inlined in the SMP sample (rare for
-                # NZO SMP, possible for NOGA), then fall back to the
-                # window-averaged lookup keyed at the SMP timestamp.
-                renewables_value = next(
-                    (val for key in RENEWABLE_KEYS if (val := _as_float(sample.get(key))) is not None),
-                    None,
-                )
-                if renewables_value is None:
-                    renewables_value = renewables_lookup.get(timestamp)
-                generation_value = (
-                    demand_value - (renewables_value or 0.0)
-                    if demand_value is not None
-                    else None
-                )
+                # See note above: net_demand intentionally carries the raw
+                # 30-min average of ActualDemand so the FE chart matches
+                # the gov NZO source 1:1 when validated by the client.
+                generation_value = demand_value
 
                 if price_with is not None or price_without is not None:
                     smp_series.append(
