@@ -137,69 +137,70 @@ class DemandService:
         _CACHE[cache_key] = {"data": data, "expires_at": time.time() + _CACHE_TTL_SECONDS}
         return data
 
+    # Field-name aliases tolerated in incoming payloads.
+    _DEMAND_FIELDS = ("demandCurrent", "demandUpdated", "demandHead", "actualDemand", "ActualDemand")
+    _RENEWABLES_FIELDS = ("renewableSum", "RenewableSum", "renewable_sum")
+
     @staticmethod
-    def to_demand_lookup(
+    def _extract(sample: Dict, fields: tuple[str, ...]) -> float | None:
+        for f in fields:
+            if f in sample and sample[f] is not None:
+                try:
+                    return float(sample[f])
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    @staticmethod
+    def _build_window_lookup(
         demand_data: List[Dict],
-        window_minutes: int | None = None,
+        fields: tuple[str, ...],
+        window_minutes: int | None,
     ) -> Dict[str, float]:
+        """Shared helper behind every timestamp->value lookup on the demand
+        payload. Centralising it guarantees demand and renewables can never
+        drift apart on rounding, window boundaries, key-name handling, or
+        empty-sample skipping — fix one, fix both.
         """
-        Flatten demand payload into a timestamp -> value lookup.
+        if window_minutes is not None and window_minutes <= 0:
+            raise ValueError("window_minutes must be a positive integer")
 
-        ``window_minutes=None`` (default, backwards-compatible) keeps the lookup
-        keyed by the exact sample timestamp — i.e. a 5-min snapshot. This is
-        wrong for charts whose buckets are coarser than the demand resolution:
-        e.g. SMP is half-hourly, so pairing each SMP bin with a single 5-min
-        demand snapshot at the bin's *start* misrepresents the bin (00:00
-        snapshot 8760 MW vs the true 00:00–00:30 average 8674 MW).
+        days = demand_data if isinstance(demand_data, list) else demand_data.get("data", [])
 
-        Pass ``window_minutes=W`` to fix this: every demand sample is floored
-        to the start of its W-minute window, and the returned lookup value at
-        each *window anchor* is the **mean of all demand samples falling in
-        [anchor, anchor + W)**. SMP services should pass ``window_minutes=30``
-        because each SMP price represents the half-hour beginning at its
-        timestamp, so the demand paired with it must also span that half-hour.
-        """
+        # Snapshot mode (legacy, callers without window_minutes): keyed by
+        # the exact sample timestamp. Only used by code that hasn't been
+        # migrated to windowed semantics yet.
         if window_minutes is None:
             lookup: Dict[str, float] = {}
-            days = demand_data if isinstance(demand_data, list) else demand_data.get("data", [])
             for day in days:
                 date_str = day.get("date") or day.get("day") or ""
                 samples = day.get("demandData") or day.get("data") or []
                 for sample in samples:
-                    ts = _iso_timestamp(date_str, sample.get("time"))
-                    demand_val = sample.get("demandCurrent") or sample.get("demandUpdated") or sample.get("demandHead")
-                    try:
-                        demand_val = float(demand_val)
-                    except (TypeError, ValueError):
+                    val = DemandService._extract(sample, fields)
+                    if val is None:
                         continue
-                    lookup[ts] = demand_val
+                    lookup[_iso_timestamp(date_str, sample.get("time"))] = val
             return lookup
 
-        if window_minutes <= 0:
-            raise ValueError("window_minutes must be a positive integer")
-
+        # Windowed mode: floor each sample to the start of its W-minute bin
+        # and return the mean per bin. Pairing a half-hourly chart bucket
+        # with a single 5-min snapshot under-represents the bucket (00:00
+        # snapshot 8760 vs the true 30-min mean 8674); averaging fixes that.
         from collections import defaultdict
         from datetime import datetime as _dt
 
         buckets: Dict[str, list[float]] = defaultdict(list)
-        days = demand_data if isinstance(demand_data, list) else demand_data.get("data", [])
         for day in days:
             date_str = day.get("date") or day.get("day") or ""
             samples = day.get("demandData") or day.get("data") or []
             for sample in samples:
-                ts = _iso_timestamp(date_str, sample.get("time"))
+                val = DemandService._extract(sample, fields)
+                if val is None:
+                    continue
                 try:
-                    dt = _dt.fromisoformat(ts)
+                    dt = _dt.fromisoformat(_iso_timestamp(date_str, sample.get("time")))
                 except ValueError:
                     continue
-                demand_val = sample.get("demandCurrent") or sample.get("demandUpdated") or sample.get("demandHead")
-                try:
-                    demand_val = float(demand_val)
-                except (TypeError, ValueError):
-                    continue
-                # Floor to window boundary; e.g. for 30-min windows the bin
-                # is [00:00, 00:30) — a sample at 00:30 floors to its own
-                # 00:30 anchor (right-exclusive), matching SMP convention.
                 mins = dt.hour * 60 + dt.minute
                 anchor_min = (mins // window_minutes) * window_minutes
                 anchor = dt.replace(
@@ -208,5 +209,41 @@ class DemandService:
                     second=0,
                     microsecond=0,
                 )
-                buckets[anchor.isoformat()].append(demand_val)
+                buckets[anchor.isoformat()].append(val)
         return {anchor: sum(vs) / len(vs) for anchor, vs in buckets.items() if vs}
+
+    @staticmethod
+    def to_demand_lookup(
+        demand_data: List[Dict],
+        window_minutes: int | None = None,
+    ) -> Dict[str, float]:
+        """Timestamp -> demand lookup.
+
+        ``window_minutes=None`` returns 5-min snapshots (legacy).
+        ``window_minutes=W`` returns the mean demand per W-minute window,
+        keyed by the window's start. Pass 30 for half-hourly SMP charts so
+        each bin holds the true 30-min average, not a snapshot at the bin's
+        start.
+        """
+        return DemandService._build_window_lookup(
+            demand_data, DemandService._DEMAND_FIELDS, window_minutes
+        )
+
+    @staticmethod
+    def to_renewables_lookup(
+        demand_data: List[Dict],
+        window_minutes: int | None = None,
+    ) -> Dict[str, float]:
+        """Timestamp -> renewables lookup, parallel to to_demand_lookup.
+
+        Subtract this from the matching demand value to get *net* demand
+        (gross demand minus renewable generation), which is what every
+        ``net_demand`` field in the SMP responses is supposed to mean. The
+        payload must carry ``renewableSum`` per sample — NZO does (see
+        ``_to_noga_demand_days``); NOGA's bare demand endpoint may not, in
+        which case this lookup is empty and the caller must source
+        renewables from ``NogaService.fetch_production_mix`` instead.
+        """
+        return DemandService._build_window_lookup(
+            demand_data, DemandService._RENEWABLES_FIELDS, window_minutes
+        )

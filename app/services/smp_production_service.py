@@ -44,6 +44,7 @@ PRICE_WITHOUT_CONSTRAINT_KEYS = [
     "smp_no_constraints",
 ]
 DEMAND_KEYS = ["actual_Demand", "actualDemand", "demand"]
+RENEWABLE_KEYS = ["renewableSum", "RenewableSum", "renewable_sum", "renewable"]
 
 
 def _as_float(value) -> Optional[float]:
@@ -108,6 +109,47 @@ def _day_key_iso(date_str: str) -> str:
 
 
 class SMPProductionService:
+    @staticmethod
+    def _build_renewables_window_lookup(
+        energy_rows: List[Dict],
+        window_minutes: int = 30,
+    ) -> Dict[str, float]:
+        """Build a {window-anchor: avg renewable MW} lookup from production
+        mix rows. Used when the demand payload didn't carry renewables (NOGA
+        bare demand endpoint) so we still produce *net* demand for the chart
+        instead of silently degrading to gross.
+        """
+        if window_minutes <= 0:
+            raise ValueError("window_minutes must be a positive integer")
+
+        from collections import defaultdict
+        from datetime import datetime as _dt
+
+        buckets: Dict[str, list[float]] = defaultdict(list)
+        for row in energy_rows or []:
+            date_str = row.get("date") or row.get("day") or ""
+            time_str = row.get("time") or row.get("hour") or row.get("timestamp")
+            try:
+                dt = _dt.fromisoformat(_iso_timestamp(date_str, time_str))
+            except ValueError:
+                continue
+            val = next(
+                (v for key in RENEWABLE_KEYS if (v := _as_float(row.get(key))) is not None),
+                None,
+            )
+            if val is None:
+                continue
+            mins = dt.hour * 60 + dt.minute
+            anchor_min = (mins // window_minutes) * window_minutes
+            anchor = dt.replace(
+                hour=anchor_min // 60,
+                minute=anchor_min % 60,
+                second=0,
+                microsecond=0,
+            )
+            buckets[anchor.isoformat()].append(val)
+        return {anchor: sum(vs) / len(vs) for anchor, vs in buckets.items() if vs}
+
     @staticmethod
     def _aggregate(series: List[Dict], period: str) -> List[Dict]:
         """
@@ -222,12 +264,40 @@ class SMPProductionService:
             to_noga_date(end_dt),
             None,
         )
-        # SMP is half-hourly: each price represents [T, T+30min). The demand
-        # we pair with it must span the same half-hour, so average the
-        # underlying 5-min demand samples per window instead of taking a
-        # single snapshot at T (which made 00:00 read 8760 vs the true
-        # 30-min mean 8674.6).
+        # SMP is half-hourly: each price represents [T, T+30min). Build the
+        # demand lookup as the *mean* of the underlying 5-min demand samples
+        # in each 30-min window (not the snapshot at T, which made 00:00
+        # read 8760 vs the true 30-min mean ~8674).
         demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
+        # ``net_demand`` in this response is "demand minus renewable
+        # generation" — that's what the chart label promises and the FE
+        # uses for the SMP-vs-net-demand scatter. Build a parallel windowed
+        # renewables lookup so we can actually compute it. If the demand
+        # payload didn't carry renewables (NOGA's bare demand endpoint
+        # doesn't expose them) we have to fetch the full production mix
+        # and build the lookup from there — otherwise we'd silently keep
+        # serving gross demand under a "net" label, which is what the
+        # client just flagged.
+        renewables_lookup = DemandService.to_renewables_lookup(demand_data, window_minutes=30)
+        if not renewables_lookup:
+            try:
+                from app.services.noga_service import NogaService
+
+                energy_rows = await NogaService.fetch_production_mix(
+                    to_noga_date(start_dt),
+                    to_noga_date(end_dt),
+                    token,
+                )
+                renewables_lookup = SMPProductionService._build_renewables_window_lookup(
+                    energy_rows, window_minutes=30
+                )
+            except Exception:
+                # If we can't get renewables at all, fall back to gross
+                # demand rather than crashing the chart. This is logged
+                # implicitly via the empty lookup and shouldn't happen on
+                # the production NOGA-first / NZO-fallback paths because
+                # both have access to renewables.
+                renewables_lookup = {}
 
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -270,7 +340,21 @@ class SMPProductionService:
                 )
                 if demand_value is None:
                     demand_value = demand_lookup.get(timestamp)
-                generation_value = demand_value
+                # Net demand = gross demand minus renewable generation.
+                # Prefer renewables inlined in the SMP sample (rare for
+                # NZO SMP, possible for NOGA), then fall back to the
+                # window-averaged lookup keyed at the SMP timestamp.
+                renewables_value = next(
+                    (val for key in RENEWABLE_KEYS if (val := _as_float(sample.get(key))) is not None),
+                    None,
+                )
+                if renewables_value is None:
+                    renewables_value = renewables_lookup.get(timestamp)
+                generation_value = (
+                    demand_value - (renewables_value or 0.0)
+                    if demand_value is not None
+                    else None
+                )
 
                 if price_with is not None or price_without is not None:
                     smp_series.append(

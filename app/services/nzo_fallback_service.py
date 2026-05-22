@@ -318,6 +318,11 @@ class NZOFallbackService:
     def _to_noga_demand_days(rows: List[Dict]) -> List[Dict]:
         """
         Convert flattened NZO energy rows to the day/list structure used by DemandService.
+
+        We carry ``renewableSum`` alongside ``demandCurrent`` so downstream
+        services that need *net* demand (gross demand minus renewables) can
+        compute it from a single fetch instead of asking NZO twice. Without
+        this the SMP services were silently treating gross demand as net.
         """
         by_date: Dict[str, List[Dict]] = {}
         for row in rows:
@@ -328,12 +333,14 @@ class NZOFallbackService:
             actual_demand = row.get("actualDemand")
             if actual_demand is None:
                 continue
-            by_date.setdefault(date_str, []).append(
-                {
-                    "time": time_str,
-                    "demandCurrent": actual_demand,
-                }
-            )
+            sample = {
+                "time": time_str,
+                "demandCurrent": actual_demand,
+            }
+            renewable_sum = row.get("renewableSum")
+            if renewable_sum is not None:
+                sample["renewableSum"] = renewable_sum
+            by_date.setdefault(date_str, []).append(sample)
 
         return [
             {"date": date_str, "demandData": sorted(samples, key=lambda s: s.get("time", ""))}

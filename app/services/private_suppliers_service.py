@@ -220,6 +220,28 @@ class PrivateSuppliersService:
 
         df = df.rename(columns=rename_map)
 
+        # Drop section-banner / aggregate-summary rows the Authority's CSV
+        # interleaves into the data. They have valid district/sector but
+        # blank (NaN or empty string) ``regulation_type`` and
+        # ``meter_type`` — the gov's own dashboard excludes them, and the
+        # client flagged them as "the headline row" being counted. In the
+        # May-2026 file this drops 14 rows and brings our per-district
+        # totals to match the gov chart exactly (e.g. המרכז 133,727 →
+        # 133,722). The check tolerates both NaN and whitespace-only
+        # cells, and only runs for columns the file actually provides so
+        # older CSV shapes still load.
+        required_categorical = [
+            col for col in ("regulation_type", "meter_type")
+            if col in df.columns
+        ]
+        if required_categorical:
+            keep = pd.Series(True, index=df.index)
+            for col in required_categorical:
+                series = df[col]
+                non_blank = series.astype(str).str.strip().str.lower()
+                keep &= series.notna() & (non_blank != "") & (non_blank != "nan")
+            df = df[keep].copy()
+
         derived_month = False
         if "year_month" in df.columns:
             df["year_month"] = pd.to_datetime(

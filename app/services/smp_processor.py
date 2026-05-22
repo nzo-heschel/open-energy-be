@@ -95,9 +95,19 @@ def _get_first_float(sample: Dict, keys: List[str], allow_fuzzy: bool = False) -
 
 class SMPProcessor:
     @staticmethod
-    def process_smp_data(raw_data: List[Dict], include_samples: bool, demand_lookup: Dict[str, float] | None = None) -> Dict:
+    def process_smp_data(
+        raw_data: List[Dict],
+        include_samples: bool,
+        demand_lookup: Dict[str, float] | None = None,
+        renewables_lookup: Dict[str, float] | None = None,
+    ) -> Dict:
         """
         Return SMP price with/without constraints plus net demand averages for charts.
+
+        ``net_demand`` is gross demand minus renewable generation. The SMP
+        samples themselves don't carry demand or renewables (NZO returns
+        only the four price fields), so both come from the windowed lookups
+        built by the caller from the demand/production-mix payload.
         """
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -105,7 +115,7 @@ class SMPProcessor:
         else:
             days = raw_data or []
 
-        flattened = SMPProcessor._flatten(days, demand_lookup or {})
+        flattened = SMPProcessor._flatten(days, demand_lookup or {}, renewables_lookup or {})
         day_avg = SMPProcessor._aggregate(flattened, by="day")
         month_avg = SMPProcessor._aggregate(flattened, by="month")
 
@@ -139,10 +149,15 @@ class SMPProcessor:
         return payload
 
     @staticmethod
-    def _flatten(days: List[Dict], demand_lookup: Dict[str, float]) -> List[Dict]:
+    def _flatten(
+        days: List[Dict],
+        demand_lookup: Dict[str, float],
+        renewables_lookup: Dict[str, float] | None = None,
+    ) -> List[Dict]:
         """
         Flatten NOGA daily payload into timestamped samples with price/net demand.
         """
+        renewables_lookup = renewables_lookup or {}
         records: List[Dict] = []
         for day in days:
             date_str = day.get("date") or day.get("day") or ""
@@ -168,7 +183,10 @@ class SMPProcessor:
                 demand_val = _get_first_float(sample, DEMAND_KEYS)
                 if demand_val is None:
                     demand_val = demand_lookup.get(ts)
+                # Renewables: sample first (rare), then windowed lookup (matches SMP bin).
                 renewables_val = _get_first_float(sample, RENEWABLE_KEYS)
+                if renewables_val is None:
+                    renewables_val = renewables_lookup.get(ts)
                 net_demand = demand_val - (renewables_val or 0) if demand_val is not None else None
 
                 records.append(
