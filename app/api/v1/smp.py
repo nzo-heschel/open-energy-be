@@ -25,31 +25,38 @@ async def get_smp_data(start_date: str = None, end_date: str = None) -> Dict:
             to_noga_date(end_dt),
             smp_token,
         )
-        # Demand source: NZO 5-min energy stream first, so the chart
-        # reconciles 1:1 with the client's gov-source validation (NOGA's
-        # demand endpoint returns a ~6 MW different value for the same
-        # bin). NOGA-via-DemandService is the safety-net fallback.
-        from app.services.nzo_fallback_service import NZOFallbackService
-
-        try:
-            demand_data = await NZOFallbackService.fetch_demand_data(
-                start_date=to_noga_date(start_dt),
-                end_date=to_noga_date(end_dt),
-                time_resolution="all",
-            )
-        except Exception:
-            demand_data = await DemandService.fetch_demand_data(
-                to_noga_date(start_dt),
-                to_noga_date(end_dt),
-                demand_token,
-            )
-        # SMP is half-hourly; pair each bin with the mean demand across the
-        # same 30-min window (not a 5-min snapshot at the bin's start).
-        # ``net_demand`` in the response is a misnomer — see the long note
-        # in smp_production_service.fetch_and_process. It carries the raw
-        # 30-min mean of ActualDemand (gross), not demand-minus-renewables,
-        # because the client validates this chart against gov ActualDemand.
+        # Per client direction: NOGA is the primary source. Fetch demand via
+        # DemandService (NOGA-first, NZO automatic fallback if NOGA fails).
+        demand_data = await DemandService.fetch_demand_data(
+            to_noga_date(start_dt),
+            to_noga_date(end_dt),
+            demand_token,
+        )
+        # SMP is half-hourly: pair each bin with the mean demand across the
+        # same 30-min window (not a snapshot at the bin's start).
         demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
+        # net_demand = demand − renewables. NZO-served demand carries
+        # renewableSum per sample; NOGA's bare demand endpoint does not,
+        # so fall back to the 5-min NZO energy stream for renewables in
+        # the NOGA path. NEVER use NogaService.fetch_production_mix here:
+        # its NZO branch returns hourly-summed values (~12× too big in a
+        # 30-min window), which broke this chart in an earlier deploy.
+        renewables_lookup = DemandService.to_renewables_lookup(demand_data, window_minutes=30)
+        if not renewables_lookup:
+            try:
+                from app.services.nzo_fallback_service import NZOFallbackService
+                from app.services.smp_production_service import SMPProductionService
+
+                energy_rows = await NZOFallbackService.fetch_energy_data(
+                    start_date=to_noga_date(start_dt),
+                    end_date=to_noga_date(end_dt),
+                    time_resolution="all",
+                )
+                renewables_lookup = SMPProductionService._build_renewables_window_lookup(
+                    energy_rows, window_minutes=30
+                )
+            except Exception:
+                renewables_lookup = {}
 
         days_delta = (end_dt - start_dt).days
         if days_delta <= 1:
@@ -64,6 +71,7 @@ async def get_smp_data(start_date: str = None, end_date: str = None) -> Dict:
             raw_smp_data,
             include_samples=include_samples,
             demand_lookup=demand_lookup,
+            renewables_lookup=renewables_lookup,
         )
         has_prices = smp_data.get("chart_with_constraints") or smp_data.get("chart_without_constraints")
         if not has_prices:

@@ -259,43 +259,40 @@ class SMPProductionService:
             to_noga_date(end_dt),
             token,
         )
-        # Demand source MUST be NZO 5-min energy for this chart. The client
-        # validates against the gov NZO source (shai.nzo.org.il) which gives
-        # ~8674.6 at 00:00 for May 18 — NOGA's own demand endpoint returns a
-        # near-identical-but-not-equal value (~8668.6), and any divergence
-        # makes the client's 1:1 check fail. We try NZO first and only fall
-        # back to NOGA-via-DemandService if NZO is unreachable, so the chart
-        # never crashes even in a worst-case upstream outage.
-        from app.services.nzo_fallback_service import NZOFallbackService
-
-        try:
-            demand_data = await NZOFallbackService.fetch_demand_data(
-                start_date=to_noga_date(start_dt),
-                end_date=to_noga_date(end_dt),
-                time_resolution="all",
-            )
-        except Exception:
-            demand_data = await DemandService.fetch_demand_data(
-                to_noga_date(start_dt),
-                to_noga_date(end_dt),
-                None,
-            )
+        # Per client direction: NOGA is the primary source. Fetch demand via
+        # DemandService (NOGA-first, NZO automatic fallback if NOGA fails).
+        demand_data = await DemandService.fetch_demand_data(
+            to_noga_date(start_dt),
+            to_noga_date(end_dt),
+            None,
+        )
         # SMP is half-hourly: each price represents [T, T+30min). Build the
         # demand lookup as the *mean* of the underlying 5-min demand samples
-        # in each 30-min window (not the snapshot at T, which made 00:00
-        # read 8760 vs the true 30-min mean ~8674).
+        # in each 30-min window.
         demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
-        # IMPORTANT — ``net_demand`` here is a misnomer kept for FE/API
-        # contract stability. The client validates this chart by reading
-        # raw ``ActualDemand`` averages from the gov NZO source, so the
-        # value we publish under ``net_demand`` MUST be the 30-min mean of
-        # ActualDemand (gross demand), NOT demand-minus-renewables. A
-        # previous version of this code subtracted renewables — that was
-        # mathematically "net demand" in power-systems jargon but broke
-        # the client's 1:1 validation against the gov data. Do not
-        # re-introduce a renewables subtraction here without first
-        # confirming with the client that they want the field name's
-        # literal meaning rather than the current behavior.
+        # ``net_demand`` = gross demand minus renewable generation (per
+        # client direction). Build a parallel windowed renewables lookup.
+        # NZO-served demand carries ``renewableSum`` per sample (see
+        # _to_noga_demand_days); NOGA's bare demand endpoint does not, so
+        # in the NOGA path we fetch the 5-min NZO energy stream directly
+        # for renewables. NEVER use NogaService.fetch_production_mix here:
+        # its NZO branch returns hourly-summed values (~12× too big in a
+        # 30-min window), which was the source of an earlier regression.
+        renewables_lookup = DemandService.to_renewables_lookup(demand_data, window_minutes=30)
+        if not renewables_lookup:
+            try:
+                from app.services.nzo_fallback_service import NZOFallbackService
+
+                energy_rows = await NZOFallbackService.fetch_energy_data(
+                    start_date=to_noga_date(start_dt),
+                    end_date=to_noga_date(end_dt),
+                    time_resolution="all",
+                )
+                renewables_lookup = SMPProductionService._build_renewables_window_lookup(
+                    energy_rows, window_minutes=30
+                )
+            except Exception:
+                renewables_lookup = {}
 
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -338,10 +335,20 @@ class SMPProductionService:
                 )
                 if demand_value is None:
                     demand_value = demand_lookup.get(timestamp)
-                # See note above: net_demand intentionally carries the raw
-                # 30-min average of ActualDemand so the FE chart matches
-                # the gov NZO source 1:1 when validated by the client.
-                generation_value = demand_value
+                # Net demand = gross demand − renewable generation.
+                # Renewables: prefer inlined in the SMP sample (rare), then
+                # the windowed lookup keyed at the SMP timestamp.
+                renewables_value = next(
+                    (val for key in RENEWABLE_KEYS if (val := _as_float(sample.get(key))) is not None),
+                    None,
+                )
+                if renewables_value is None:
+                    renewables_value = renewables_lookup.get(timestamp)
+                generation_value = (
+                    demand_value - (renewables_value or 0.0)
+                    if demand_value is not None
+                    else None
+                )
 
                 if price_with is not None or price_without is not None:
                     smp_series.append(
