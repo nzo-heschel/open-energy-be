@@ -281,9 +281,22 @@ class HeatLoadVsGenerationService:
                 float(sample.get(key, 0) or 0)
                 for key in TOTAL_GENERATION_KEYS
             )
-            if sample.get(NZO_TIME_RESOLUTION_FIELD) == "hour":
-                total_generation /= 12
-            rows.append({"timestamp": ts, "electricity_generation_mw": total_generation})
+            # Convert each sample to **MWh for that sample's interval**, so a
+            # plain ``.sum()`` across the period always yields total MWh — no
+            # matter whether the upstream is NOGA 5-min, NZO 5-min, or NZO
+            # hour-summed. Math:
+            #   - NOGA 5-min / NZO "all": each value is instantaneous MW.
+            #     MWh for the 5-min slice = MW × (5/60) = MW/12.
+            #   - NZO "hour": each value is the SUM of 12×5-min MW samples
+            #     for that hour. Average MW = sum/12; MWh for the hour =
+            #     avg_MW × 1h = sum/12.
+            # Both paths converge on ``/12`` → divide unconditionally. This
+            # replaces an earlier conditional that only divided in the NZO
+            # "hour" branch and silently left NOGA values as raw MW, which
+            # made the new ``sum`` aggregation read ~12× too high
+            # (e.g. weekly 17,088,818 MWh vs the true ~1.5M MWh).
+            mwh_for_sample = total_generation / 12.0
+            rows.append({"timestamp": ts, "electricity_generation_mw": mwh_for_sample})
 
         if not rows:
             raise HTTPException(
