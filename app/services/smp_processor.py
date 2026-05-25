@@ -203,12 +203,20 @@ class SMPProcessor:
         records.sort(key=lambda x: x["timestamp"])
         return records
 
+    # 30-min bins (SMP source resolution). MWh per bin = mean MW × 0.5h.
+    _BIN_HOURS = 0.5
+
     @staticmethod
     def _aggregate(records: List[Dict], by: str) -> List[Dict]:
         """
-        Aggregate by day or month averages for the prices and net demand.
+        Aggregate by day or month — prices as MEANS, net_demand as TOTAL MWh.
+
+        Per client direction: ``net_demand`` per period is the total MWh of
+        demand delivered in that period (not the mean MW). The per-bin input
+        is the 30-min mean MW; total period MWh = sum(per-bin MW) × 0.5h.
+        Prices stay means (₪/MWh — averaging is the meaningful summary).
+        Mirrors the same change in smp_production_service._aggregate.
         """
-        # Monthly values should be the average of daily averages (not raw samples).
         if by == "month":
             daily = SMPProcessor._aggregate(records, by="day")
             buckets: Dict[str, Dict[str, float | int]] = {}
@@ -216,16 +224,16 @@ class SMPProcessor:
                 period = rec.get("period")
                 if not period:
                     continue
-                month_key = period[:7]  # YYYY-MM
+                month_key = period[:7]
                 bucket = buckets.setdefault(
                     month_key,
                     {
                         "with_sum": 0.0,
                         "without_sum": 0.0,
-                        "net_sum": 0.0,
+                        "net_mwh_total": 0.0,  # SUM of daily MWh = monthly MWh
                         "count_with": 0,
                         "count_without": 0,
-                        "count_net": 0,
+                        "has_net": False,
                     },
                 )
                 if rec.get("price_with_constraints") is not None:
@@ -235,8 +243,8 @@ class SMPProcessor:
                     bucket["without_sum"] += rec["price_without_constraints"]  # type: ignore
                     bucket["count_without"] += 1  # type: ignore
                 if rec.get("net_demand") is not None:
-                    bucket["net_sum"] += rec["net_demand"]  # type: ignore
-                    bucket["count_net"] += 1  # type: ignore
+                    bucket["net_mwh_total"] += rec["net_demand"]  # type: ignore
+                    bucket["has_net"] = True  # type: ignore
 
             aggregated: List[Dict] = []
             for bucket_key, values in buckets.items():
@@ -249,13 +257,14 @@ class SMPProcessor:
                         "price_without_constraints": (
                             values["without_sum"] / values["count_without"] if values["count_without"] else None
                         ),
-                        "net_demand": values["net_sum"] / values["count_net"] if values["count_net"] else None,
+                        "net_demand": values["net_mwh_total"] if values["has_net"] else None,
                     }
                 )
 
             aggregated.sort(key=lambda x: x["period"])
             return aggregated
 
+        # Day-level aggregation directly from per-30-min records.
         buckets: Dict[str, Dict[str, float | int]] = {}
 
         for rec in records:
@@ -264,19 +273,16 @@ class SMPProcessor:
                 dt = datetime.fromisoformat(ts)
             except Exception:
                 continue
-            if by == "month":
-                bucket_key = dt.strftime("%Y-%m")
-            else:
-                bucket_key = dt.date().isoformat()
+            bucket_key = dt.date().isoformat()
             bucket = buckets.setdefault(
                 bucket_key,
                 {
                     "with_sum": 0.0,
                     "without_sum": 0.0,
-                    "net_sum": 0.0,
+                    "net_mw_sum": 0.0,  # sum of 30-min mean MW
                     "count_with": 0,
                     "count_without": 0,
-                    "count_net": 0,
+                    "has_net": False,
                 },
             )
             if rec.get("price_with_constraints") is not None:
@@ -286,11 +292,16 @@ class SMPProcessor:
                 bucket["without_sum"] += rec["price_without_constraints"]  # type: ignore
                 bucket["count_without"] += 1  # type: ignore
             if rec.get("net_demand") is not None:
-                bucket["net_sum"] += rec["net_demand"]  # type: ignore
-                bucket["count_net"] += 1  # type: ignore
+                bucket["net_mw_sum"] += rec["net_demand"]  # type: ignore
+                bucket["has_net"] = True  # type: ignore
 
         aggregated: List[Dict] = []
         for bucket_key, values in buckets.items():
+            total_net_mwh = (
+                values["net_mw_sum"] * SMPProcessor._BIN_HOURS
+                if values["has_net"]
+                else None
+            )
             aggregated.append(
                 {
                     "period": bucket_key,
@@ -300,7 +311,7 @@ class SMPProcessor:
                     "price_without_constraints": (
                         values["without_sum"] / values["count_without"] if values["count_without"] else None
                     ),
-                    "net_demand": values["net_sum"] / values["count_net"] if values["count_net"] else None,
+                    "net_demand": total_net_mwh,
                 }
             )
 

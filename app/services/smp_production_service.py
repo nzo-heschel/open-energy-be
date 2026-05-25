@@ -150,29 +150,52 @@ class SMPProductionService:
             buckets[anchor.isoformat()].append(val)
         return {anchor: sum(vs) / len(vs) for anchor, vs in buckets.items() if vs}
 
+    # Each combined_series item represents a 30-min bin (SMP is half-hourly),
+    # so MWh per bin = (mean MW for the bin) × 0.5h. Hard-coded because the
+    # SMP source resolution is fixed by the gov dashboard contract.
+    _BIN_HOURS = 0.5
+
     @staticmethod
     def _aggregate(series: List[Dict], period: str) -> List[Dict]:
         """
-        Aggregate timestamped series by day, month, or year.
+        Aggregate the per-30-min combined_series by day, month, or year.
+
+        IMPORTANT — per client direction (May 2026): each aggregated period
+        must publish the **TOTAL MWh of demand for the period**, not the
+        mean MW. Prices remain means (they are ₪/MWh rates; averaging is
+        the meaningful summary). The conversion is:
+
+            input net_demand (per-bin) = mean MW over a 30-min window
+            output net_demand (per period) = SUM(per-bin mean MW) × 0.5h
+                                           = total MWh delivered in the period
+
+        For "day" we aggregate directly from the 30-min series; "month" and
+        "year" recurse via daily totals so monthly = sum of daily MWh totals
+        (same answer as direct sum × 0.5, but keeps the daily total visible
+        and ensures price means follow the existing "mean of daily means"
+        contract that the FE was built against).
+
+        Do NOT change ``net_demand`` back to a mean without confirming with
+        the client first — this is a deliberate semantic change to match
+        the gov dashboard's MWh-per-day axis.
         """
-        if period == "month":
-            # Monthly values should be the average of daily averages.
+        if period in ("month", "year"):
             daily = SMPProductionService._aggregate(series, period="day")
             buckets: Dict[str, Dict[str, float | int]] = {}
             for item in daily:
                 period_key = item.get("period")
                 if not period_key:
                     continue
-                month_key = period_key[:7]  # YYYY-MM
+                key = period_key[:7] if period == "month" else period_key[:4]
                 bucket = buckets.setdefault(
-                    month_key,
+                    key,
                     {
                         "with_sum": 0.0,
                         "without_sum": 0.0,
-                        "net_sum": 0.0,
+                        "net_mwh_total": 0.0,  # SUM of daily MWh = period MWh
                         "count_with": 0,
                         "count_without": 0,
-                        "count_net": 0,
+                        "has_net": False,
                     },
                 )
                 if item.get("price_with_constraints") is not None:
@@ -182,47 +205,43 @@ class SMPProductionService:
                     bucket["without_sum"] += item["price_without_constraints"]  # type: ignore
                     bucket["count_without"] += 1  # type: ignore
                 if item.get("net_demand") is not None:
-                    bucket["net_sum"] += item["net_demand"]  # type: ignore
-                    bucket["count_net"] += 1  # type: ignore
+                    bucket["net_mwh_total"] += item["net_demand"]  # type: ignore  # daily MWh
+                    bucket["has_net"] = True  # type: ignore
 
             aggregated: List[Dict] = []
             for key, values in buckets.items():
                 avg_with = values["with_sum"] / values["count_with"] if values["count_with"] else None
                 avg_without = values["without_sum"] / values["count_without"] if values["count_without"] else None
-                avg_net = values["net_sum"] / values["count_net"] if values["count_net"] else None
+                total_net = values["net_mwh_total"] if values["has_net"] else None
                 aggregated.append(
                     {
                         "period": key,
                         "avg_smp": avg_with if avg_with is not None else avg_without,
                         "price_with_constraints": avg_with,
                         "price_without_constraints": avg_without,
-                        "net_demand": avg_net,
+                        "net_demand": total_net,
                     }
                 )
             aggregated.sort(key=lambda x: x["period"])
             return aggregated
 
+        # Day-level aggregation directly from the per-30-min series.
         buckets: Dict[str, Dict[str, float | int]] = {}
         for item in series:
             try:
                 dt = datetime.fromisoformat(item["timestamp"])
             except Exception:
                 continue
-            if period == "month":
-                key = dt.strftime("%Y-%m")
-            elif period == "year":
-                key = dt.strftime("%Y")
-            else:
-                key = dt.date().isoformat()
+            key = dt.date().isoformat()
             bucket = buckets.setdefault(
                 key,
                 {
                     "with_sum": 0.0,
                     "without_sum": 0.0,
-                    "net_sum": 0.0,
+                    "net_mw_sum": 0.0,  # sum of 30-min mean MW values
                     "count_with": 0,
                     "count_without": 0,
-                    "count_net": 0,
+                    "has_net": False,
                 },
             )
             if item.get("price_with_constraints") is not None:
@@ -232,21 +251,26 @@ class SMPProductionService:
                 bucket["without_sum"] += item["price_without_constraints"]  # type: ignore
                 bucket["count_without"] += 1  # type: ignore
             if item.get("net_demand") is not None:
-                bucket["net_sum"] += item["net_demand"]  # type: ignore
-                bucket["count_net"] += 1  # type: ignore
+                bucket["net_mw_sum"] += item["net_demand"]  # type: ignore
+                bucket["has_net"] = True  # type: ignore
 
         aggregated: List[Dict] = []
         for key, values in buckets.items():
             avg_with = values["with_sum"] / values["count_with"] if values["count_with"] else None
             avg_without = values["without_sum"] / values["count_without"] if values["count_without"] else None
-            avg_net = values["net_sum"] / values["count_net"] if values["count_net"] else None
+            # Day TOTAL MWh = sum of 30-min mean MW × 0.5h.
+            total_net_mwh = (
+                values["net_mw_sum"] * SMPProductionService._BIN_HOURS
+                if values["has_net"]
+                else None
+            )
             aggregated.append(
                 {
                     "period": key,
                     "avg_smp": avg_with if avg_with is not None else avg_without,
                     "price_with_constraints": avg_with,
                     "price_without_constraints": avg_without,
-                    "net_demand": avg_net,
+                    "net_demand": total_net_mwh,
                 }
             )
         aggregated.sort(key=lambda x: x["period"])

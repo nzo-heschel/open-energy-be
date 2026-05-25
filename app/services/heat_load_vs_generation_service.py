@@ -296,7 +296,30 @@ class HeatLoadVsGenerationService:
         return gen_df
 
     @staticmethod
-    def _bucket_by_view(df: pd.DataFrame, ts_col: str, value_col: str, view: HeatLoadView) -> pd.DataFrame:
+    def _bucket_by_view(
+        df: pd.DataFrame,
+        ts_col: str,
+        value_col: str,
+        view: HeatLoadView,
+        agg_method: str = "mean",
+    ) -> pd.DataFrame:
+        """
+        Bucket *df* by day (month/custom view) or by ISO-week (year view).
+
+        ``agg_method``:
+          * ``"mean"`` — representative average per bucket. Right for the
+            heat-load THI series (a temperature index — averaging is the
+            meaningful summary across a day).
+          * ``"sum"`` — sum per bucket. Right for **electricity generation**
+            so each daily/weekly value is the TOTAL energy (MWh) delivered,
+            per client direction (May 2026). This relies on the upstream
+            generation sample being one-hour-spaced avg MW (the NZO/NOGA
+            ``time=hour`` path in this codebase): each row already equals
+            MWh-per-hour, so a plain sum across the period gives total MWh
+            without an extra multiplier. If the upstream resolution ever
+            changes (e.g. to 5-min), this assumption must be re-derived
+            or the sum will be off by the new interval factor.
+        """
         data = df.copy()
         if view == HeatLoadView.YEAR:
             data["period"] = data[ts_col].dt.to_period("W").astype(str)
@@ -305,11 +328,10 @@ class HeatLoadVsGenerationService:
             data["period"] = data[ts_col].dt.strftime("%Y-%m-%d")
             data["label"] = data[ts_col].dt.strftime("%d %b")
 
-        grouped = (
-            data.groupby(["period", "label"], as_index=False)[value_col]
-            .mean()
-            .rename(columns={value_col: value_col})
-        )
+        if agg_method == "sum":
+            grouped = data.groupby(["period", "label"], as_index=False)[value_col].sum()
+        else:
+            grouped = data.groupby(["period", "label"], as_index=False)[value_col].mean()
         return grouped.sort_values("period")
 
     @staticmethod
@@ -321,6 +343,7 @@ class HeatLoadVsGenerationService:
             ts_col="timestamp_utc",
             value_col="heat_load",
             view=view,
+            agg_method="mean",  # THI: representative average per day
         )
 
         generation_note = None
@@ -332,6 +355,7 @@ class HeatLoadVsGenerationService:
                 ts_col="timestamp",
                 value_col="electricity_generation_mw",
                 view=view,
+                agg_method="sum",  # total MWh per day/week per client direction
             )
         except Exception as exc:  # noqa: BLE001
             generation_note = f"Generation data is unavailable: {exc}"
