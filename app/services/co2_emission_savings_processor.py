@@ -96,15 +96,28 @@ class CO2Processor:
             (raw_fossil_sum / raw_demand_sum) / 12.0 if raw_demand_sum > 0 else 0.0
         )
         emissions_per_kwh = total_emissions / (demand_mwh * 1000.0) if demand_mwh > 0 else 0.0
+        # Renewable savings as a percentage of fossil emissions, per client
+        # spec: renewables_CO2 / fossil_CO2 × 100. (Previously the
+        # denominator was fossil + savings, which under-reported the figure
+        # — e.g. Apr 29 showed 22.21% instead of the expected 28.55%.)
+        # Can exceed 100% on high-renewable days, which is expected.
         savings_percent = (
-            renewable_savings / (total_emissions + renewable_savings) * 100.0
-            if (total_emissions + renewable_savings) > 0
+            renewable_savings / total_emissions * 100.0
+            if total_emissions > 0
             else 0.0
         )
+        # Average fossil emission RATE in mTCO2/h. Each raw sample is already
+        # an instantaneous tons-CO2/h rate, so the mean of the samples is the
+        # average hourly rate over the period. This backs the "שיעור פליטות
+        # CO2 ממקורות פוסיליים" (fossil emission rate) infographic, whose
+        # unit is mTCO2/h — NOT the period total.
+        sample_count = len(samples) if samples else 0
+        fossil_emissions_rate = raw_fossil_sum / sample_count if sample_count else 0.0
 
         return {
             "components": components,
             "total_emissions": total_emissions,
+            "fossil_emissions_rate": fossil_emissions_rate,
             "generation_mwh": demand_mwh,
             "renewable_savings": renewable_savings,
             "emissions_ratio": emissions_ratio,

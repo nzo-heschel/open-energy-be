@@ -71,9 +71,12 @@ async def get_emissions_over_time(
 
         infographics = {
             "total_emissions_excluding_renewables": {
-                "value": round(totals["total_emissions"], 2),
-                "unit": "tons CO2",
-                "description": "Total CO2 emissions from fossil fuels (coal + gas + diesel + fuel oil + methanol)"
+                # Fossil emission RATE (mTCO2/h), per client spec — see note
+                # in co2_emissions_mix. Period total stays at top-level
+                # `total_emissions`.
+                "value": round(totals.get("fossil_emissions_rate", 0.0), 2),
+                "unit": "mTCO2/h",
+                "description": "Average CO2 emission rate from fossil fuels (coal + gas + diesel + fuel oil + methanol), in metric tons CO2 per hour"
             },
             "emissions_avoided_through_renewables": {
                 "value": round(totals["renewable_savings"], 2),

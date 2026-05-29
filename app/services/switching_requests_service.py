@@ -290,10 +290,20 @@ def _monthly_rejection_breakdown(df: pd.DataFrame, value_col: str) -> List[Dict]
 def build_payload(
     customer_type: Optional[str] = None,
     year: Optional[int] = None,
+    years: Optional[List[int]] = None,
     csv_path: Optional[Path] = None,
 ) -> Dict:
     df = _load_dataframe(csv_path)
     status = data_file_status(DataFileSource.SWITCHING_REQUESTS)
+
+    # Multi-year selection. ``years`` (a list) takes precedence; ``year``
+    # (single int) is kept for backwards compatibility. Empty/None means
+    # "all years" — the default the client wants on first load.
+    selected_years: List[int] = []
+    if years:
+        selected_years = [int(y) for y in years]
+    elif year is not None:
+        selected_years = [int(year)]
 
     year_month_col = _resolve_column(
         df,
@@ -389,10 +399,11 @@ def build_payload(
         df["status_reason_details"] = df["status_reason_details"].apply(_translate_value)
 
     available_years = sorted(df["year"].dropna().unique().tolist())
-    if year:
-        if year < 2021:
+    if selected_years:
+        invalid = [y for y in selected_years if y < 2021]
+        if invalid:
             raise ValueError("year must be 2021 or later")
-        df = df[df["year"] == year]
+        df = df[df["year"].isin(selected_years)]
 
     if customer_type:
         normalized_customer_type = _translate_value(customer_type)
@@ -457,7 +468,9 @@ def build_payload(
     payload = {
         "filter": {
             "customer_type": customer_type or "all",
-            "year": year or "all",
+            # Back-compat single value plus the full multi-select list.
+            "year": (selected_years[0] if len(selected_years) == 1 else "all"),
+            "years": selected_years or "all",
         },
         "unit": "count",
         "available_years": available_years,
