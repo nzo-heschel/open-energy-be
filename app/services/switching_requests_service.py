@@ -379,7 +379,13 @@ def build_payload(
         rename_map[status_reason_details_col] = "status_reason_details"
     df = df.rename(columns=rename_map)
 
-    df["year_month"] = pd.to_datetime(df["year_month"], errors="coerce")
+    # ``dayfirst=True`` so DD/MM/YYYY (the format the gov.il "Date" column
+    # uses since the May-2026 rename, e.g. "01/02/2022 00:00") parses to
+    # Feb 1, 2022 — not Jan 2 like pandas' default MM/DD would. The old
+    # "YYYY/MM" format (e.g. "2021/09") is still parsed correctly because
+    # it's unambiguous. Without this every non-January row collapsed onto
+    # January, leaving only 6 buckets in monthly_requests (one per year).
+    df["year_month"] = pd.to_datetime(df["year_month"], errors="coerce", dayfirst=True)
     df = df.dropna(subset=["year_month"])
     df["requests_count"] = pd.to_numeric(df["requests_count"], errors="coerce").fillna(0)
     df["year"] = df["year_month"].dt.year
