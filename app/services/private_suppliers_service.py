@@ -391,6 +391,38 @@ class PrivateSuppliersService:
         return segments
 
     @staticmethod
+    def _compute_district_meter_breakdown(
+        all_months: pd.DataFrame, start_dt, end_dt
+    ) -> Dict[str, Dict[str, int]]:
+        """
+        Per-district × per-meter_type total counts for the FE stacked-bar
+        chart. Each district key maps to ``{"smart": N, "basic": N}``.
+
+        Computed server-side so the FE doesn't re-aggregate from raw rows.
+        Doing it client-side previously produced wrong splits (e.g. Haifa
+        showed 12,169/35,584 instead of the correct 12,975/34,778) while
+        the per-district *totals* stayed right.
+        """
+        breakdown: Dict[str, Dict[str, int]] = {}
+        if "district" not in all_months.columns or "meter_type" not in all_months.columns:
+            return breakdown
+        mask = (all_months["month"] >= start_dt) & (all_months["month"] <= end_dt)
+        filtered = all_months[mask]
+        if filtered.empty:
+            return breakdown
+        grouped = (
+            filtered.groupby(["district", "meter_type"])["total_consumers"]
+            .sum()
+            .reset_index()
+        )
+        for _, row in grouped.iterrows():
+            district_key = PrivateSuppliersService._translate_value(row["district"])
+            meter_key = row["meter_type"]  # already translated to smart/basic
+            bucket = breakdown.setdefault(district_key, {})
+            bucket[meter_key] = int(row["total_consumers"])
+        return breakdown
+
+    @staticmethod
     def _translate_value(value: str) -> str:
         mapping = {
             "ביתי": "residential",
@@ -441,6 +473,9 @@ class PrivateSuppliersService:
         start_dt = parse_date(start_iso).replace(day=1)
         end_dt = parse_date(end_iso).replace(day=1)
         segments = PrivateSuppliersService._compute_segments(df, start_dt, end_dt)
+        district_meter_breakdown = PrivateSuppliersService._compute_district_meter_breakdown(
+            df, start_dt, end_dt
+        )
 
         notes: List[str] = []
         if start_date:
@@ -486,6 +521,7 @@ class PrivateSuppliersService:
             },
             "data": monthly,
             "segments": segments,
+            "district_meter_breakdown": district_meter_breakdown,
             "note": note,
         }
 
