@@ -77,6 +77,30 @@ _MUNICIPAL_STATUS_MAP = {
     "אחר": "Other",
 }
 
+# Per client (Jun 2026): the CSV ``הספק MW`` column is a **DC** capacity
+# (panel rating). The gov-source size brackets are **AC** (grid-connection
+# kW after the inverter). To match the gov dashboard exactly we convert
+# each row's DC MW to AC MW using a technology-specific inverter-loading
+# parameter, bucket on the AC value, but still **sum the original DC MW**
+# per bracket. Parameter table — keyed by the translated
+# ``technology_classification`` value (Column H — סיווג של הטכנולוגיה):
+#   1.2  for "Dual Use"            (דו שימושי)
+#   1.3  for "Photovoltaic"        (פוטוולטאי)
+#   1.3  for "Ground-mounted"      (קרקעי)
+#   2.3  for "Integrated Storage"  (משולב אגירה)
+#   1.0  for everything else (acts as a no-op)
+_AC_CONVERSION_PARAMS = {
+    "Dual Use": 1.2,
+    "Photovoltaic": 1.3,
+    "Ground-mounted": 1.3,
+    "Integrated Storage": 2.3,
+}
+
+
+def _ac_param_for(classification: object) -> float:
+    return _AC_CONVERSION_PARAMS.get(str(classification or "").strip(), 1.0)
+
+
 # Capacity size brackets (MW) used for endpoint 11.
 # Client-defined tiers (kW): 0-200 | 201-630 | 631-5000 | 5001+
 #
@@ -167,8 +191,22 @@ class ConnectedFacilitiesService:
                 df["municipal_status"].map(_MUNICIPAL_STATUS_MAP).fillna(df["municipal_status"])
             )
 
-        # Assign size bracket
-        df["size_bracket"] = df["capacity_mw"].apply(_assign_size_bracket)
+        # Drop rows whose DC MW is zero — per client direction these
+        # represent non-operational placeholders and inflate the count.
+        df = df[df["capacity_mw"] != 0].copy()
+
+        # Convert DC MW → AC MW per row using the technology-specific
+        # inverter-loading parameter. The size bracket is decided by the
+        # AC value; the bracket TOTAL stays in DC MW (we still sum the
+        # original ``capacity_mw`` column downstream).
+        if "technology_classification" in df.columns:
+            df["_ac_param"] = df["technology_classification"].apply(_ac_param_for)
+        else:
+            df["_ac_param"] = 1.0
+        df["ac_mw"] = df["capacity_mw"] / df["_ac_param"]
+
+        # Assign size bracket using the AC value.
+        df["size_bracket"] = df["ac_mw"].apply(_assign_size_bracket)
 
         # Sort by date
         df = df.sort_values("date").reset_index(drop=True)
