@@ -25,6 +25,49 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://apim-api.noga-iso.co.il/"
 
 
+# NOGA renamed many production-mix fields in June 2026. To keep every
+# downstream consumer (energy_overview, renewable_mix, renewable_transition,
+# renewable_potential, heat_load_vs_generation, smp_production, the CO2
+# services, and the /production-mix endpoint) working without touching each
+# one, we mirror every renamed field back to its historical name in the
+# flattened sample. Old code that does ``sample.get("photoVoltaic", 0)``
+# continues to work unchanged.
+#
+# Mapping is intentionally conservative — only fields with a clear semantic
+# equivalent are mirrored. Net fields that the client previously asked us to
+# EXCLUDE stay unmapped so they don't accidentally re-enter the totals:
+#   - pump_Gen_PumpedStorage  (net PSP — client wants gross only)
+#   - discharge_Charge_BESS   (net BESS — excluded per client)
+#   - discharge_PumpedStorage_and_BESS  (bundled storage discharge)
+#   - demand_Management       (no equivalent in old schema)
+#
+# NOGA's own ``total_Renewables`` includes ``thermo_Solar``, so we mirror
+# it onto the existing ``thermo`` key (a renewable in our schema) — matching
+# NOGA's classification and the gov dashboard's totals.
+_NOGA_NEW_TO_OLD_KEYS = {
+    "pv": "photoVoltaic",
+    "discharge_PV_BESS": "photovoltaicIntegrated",
+    "thermo_Solar": "thermo",
+    "gas_Oil": "diesel",
+    "oil": "mazut",
+    "total_Renewables": "renewableSum",
+    "demand": "actualDemand",
+}
+
+
+def _normalize_noga_sample(sample: Dict) -> Dict:
+    """Mirror NOGA's new field names onto the historical names.
+
+    Mutates and returns ``sample``. Does NOT overwrite an existing
+    historical key, so samples that already carry both names (e.g. from a
+    transitional NOGA response) keep their original value.
+    """
+    for new_key, old_key in _NOGA_NEW_TO_OLD_KEYS.items():
+        if new_key in sample and old_key not in sample:
+            sample[old_key] = sample[new_key]
+    return sample
+
+
 class NogaService:
     @staticmethod
     async def fetch_production_mix(start: str, end: str, token: str | None) -> List[Dict]:
@@ -118,6 +161,7 @@ class NogaService:
                 for time_item in time_items:
                     value = {"date": date}
                     value.update(time_item)
+                    _normalize_noga_sample(value)
                     values.append(value)
             return values
 
