@@ -9,7 +9,6 @@ from io import BytesIO
 from fastapi import HTTPException
 
 from app.services.smp_service import SMPService
-from app.services.demand_service import DemandService
 from app.utils.date_utils import to_iso_date, to_noga_date
 
 PRICE_WITH_CONSTRAINT_KEYS = [
@@ -45,6 +44,30 @@ PRICE_WITHOUT_CONSTRAINT_KEYS = [
 ]
 DEMAND_KEYS = ["actual_Demand", "actualDemand", "demand"]
 RENEWABLE_KEYS = ["renewableSum", "RenewableSum", "renewable_sum", "renewable"]
+
+# Per client direction (Jun 2026): the SMP chart's Y-axis must publish the
+# same total the production-mix pie chart shows — i.e. the sum of all
+# generation sources (non-renewables + renewables + other) with NO
+# subtraction. Keys mirror what energy_overview_service / pie chart use.
+# NOGA's renamed fields are already normalised back to these historical
+# names inside ``NogaService._flatten_energy``.
+TOTAL_GENERATION_KEYS_FOR_SMP = [
+    # Non-renewables
+    "coal",
+    "natural_Gas", "natural_gas",
+    "diesel", "Diesel",
+    "mazut",
+    "termo_Soler", "solar", "solar_thermal",
+    # Renewables
+    "photoVoltaic", "photovoltaic", "photo_voltaic",
+    "bio_Gas", "biogas",
+    "wind",
+    "photovoltaicIntegrated", "pv_storage", "photovoltaic_storage",
+    "thermo", "Thermo",
+    # Other
+    "other",
+    "pumpedStorage", "pumped_storage",
+]
 
 
 def _as_float(value) -> Optional[float]:
@@ -110,6 +133,46 @@ def _day_key_iso(date_str: str) -> str:
 
 class SMPProductionService:
     @staticmethod
+    async def _fetch_production_mix_5min(
+        start_dt: datetime,
+        end_dt: datetime,
+        token: str | None,
+    ) -> List[Dict]:
+        """Fetch production-mix at 5-minute resolution from NOGA (primary)
+        with NZO 5-min fallback.
+
+        Do NOT call ``NogaService.fetch_production_mix`` for SMP — it
+        returns NZO at *hourly* resolution on the fallback path, where each
+        value is the sum of 12 five-minute MW readings (~12× too high).
+        That bug zeroed/inflated the SMP chart in an earlier deploy and is
+        flagged in _build_total_generation_window_lookup as well.
+        """
+        from app.services.noga_service import NogaService
+        from app.services.noga_source_mode import use_nzo_fallback_only
+        from app.services.nzo_fallback_service import NZOFallbackService
+
+        start = to_noga_date(start_dt)
+        end = to_noga_date(end_dt)
+
+        async def _nzo_5min() -> List[Dict]:
+            return await NZOFallbackService.fetch_energy_data(
+                start_date=start,
+                end_date=end,
+                time_resolution="all",
+            )
+
+        if use_nzo_fallback_only():
+            return await _nzo_5min()
+        try:
+            return await NogaService._fetch_from_noga(start, end, token)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "NOGA production-mix failed for SMP, using NZO 5-min: %s", exc
+            )
+            return await _nzo_5min()
+
+    @staticmethod
     def _build_renewables_window_lookup(
         energy_rows: List[Dict],
         window_minutes: int = 30,
@@ -148,6 +211,56 @@ class SMPProductionService:
                 microsecond=0,
             )
             buckets[anchor.isoformat()].append(val)
+        return {anchor: sum(vs) / len(vs) for anchor, vs in buckets.items() if vs}
+
+    @staticmethod
+    def _build_total_generation_window_lookup(
+        energy_rows: List[Dict],
+        window_minutes: int = 30,
+    ) -> Dict[str, float]:
+        """Build a {window-anchor: avg total-generation MW} lookup from
+        production-mix rows.
+
+        Total generation = sum of ALL generation categories (non-renewables +
+        renewables + other), matching the production-mix pie chart. Per client
+        direction (Jun 2026) this — not gross demand and not demand-minus-
+        renewables — is what the SMP chart's Y-axis must publish. Do NOT
+        re-introduce a subtraction or swap back to DemandService without
+        checking the PRD; this field has flipped meaning several times.
+        """
+        if window_minutes <= 0:
+            raise ValueError("window_minutes must be a positive integer")
+
+        from collections import defaultdict
+        from datetime import datetime as _dt
+
+        buckets: Dict[str, list[float]] = defaultdict(list)
+        for row in energy_rows or []:
+            date_str = row.get("date") or row.get("day") or ""
+            time_str = row.get("time") or row.get("hour") or row.get("timestamp")
+            try:
+                dt = _dt.fromisoformat(_iso_timestamp(date_str, time_str))
+            except ValueError:
+                continue
+            total = 0.0
+            saw_any = False
+            for key in TOTAL_GENERATION_KEYS_FOR_SMP:
+                val = _as_float(row.get(key))
+                if val is None:
+                    continue
+                total += val
+                saw_any = True
+            if not saw_any:
+                continue
+            mins = dt.hour * 60 + dt.minute
+            anchor_min = (mins // window_minutes) * window_minutes
+            anchor = dt.replace(
+                hour=anchor_min // 60,
+                minute=anchor_min % 60,
+                second=0,
+                microsecond=0,
+            )
+            buckets[anchor.isoformat()].append(total)
         return {anchor: sum(vs) / len(vs) for anchor, vs in buckets.items() if vs}
 
     # Each combined_series item represents a 30-min bin (SMP is half-hourly),
@@ -283,40 +396,27 @@ class SMPProductionService:
             to_noga_date(end_dt),
             token,
         )
-        # Per client direction: NOGA is the primary source. Fetch demand via
-        # DemandService (NOGA-first, NZO automatic fallback if NOGA fails).
-        demand_data = await DemandService.fetch_demand_data(
-            to_noga_date(start_dt),
-            to_noga_date(end_dt),
-            None,
+        # Per client direction (Jun 2026): SMP chart's Y-axis publishes the
+        # SAME total the production-mix pie chart shows — i.e. sum of all
+        # generation categories (non-renewables + renewables + other), no
+        # subtraction. Source: NogaService.fetch_production_mix (NOGA-first
+        # with NZO fallback). Field renamed upstream — _normalize_noga_sample
+        # already mirrors the new NOGA keys back to the historical names that
+        # TOTAL_GENERATION_KEYS_FOR_SMP looks up.
+        #
+        # History to preserve: this field was net (demand − renewables) and
+        # earlier was gross demand. Do not flip back without re-reading the
+        # PRD and the Jun-2026 client message.
+        production_mix = await SMPProductionService._fetch_production_mix_5min(
+            start_dt, end_dt, token
         )
         # SMP is half-hourly: each price represents [T, T+30min). Build the
-        # demand lookup as the *mean* of the underlying 5-min demand samples
-        # in each 30-min window.
-        demand_lookup = DemandService.to_demand_lookup(demand_data, window_minutes=30)
-        # ``net_demand`` = gross demand minus renewable generation (per
-        # client direction). Build a parallel windowed renewables lookup.
-        # NZO-served demand carries ``renewableSum`` per sample (see
-        # _to_noga_demand_days); NOGA's bare demand endpoint does not, so
-        # in the NOGA path we fetch the 5-min NZO energy stream directly
-        # for renewables. NEVER use NogaService.fetch_production_mix here:
-        # its NZO branch returns hourly-summed values (~12× too big in a
-        # 30-min window), which was the source of an earlier regression.
-        renewables_lookup = DemandService.to_renewables_lookup(demand_data, window_minutes=30)
-        if not renewables_lookup:
-            try:
-                from app.services.nzo_fallback_service import NZOFallbackService
-
-                energy_rows = await NZOFallbackService.fetch_energy_data(
-                    start_date=to_noga_date(start_dt),
-                    end_date=to_noga_date(end_dt),
-                    time_resolution="all",
-                )
-                renewables_lookup = SMPProductionService._build_renewables_window_lookup(
-                    energy_rows, window_minutes=30
-                )
-            except Exception:
-                renewables_lookup = {}
+        # total-generation lookup as the *mean* of the underlying 5-min
+        # samples in each 30-min window (or the single NZO hourly sample
+        # broadcast across two bins when only hourly NZO data is available).
+        total_gen_lookup = SMPProductionService._build_total_generation_window_lookup(
+            production_mix, window_minutes=30
+        )
 
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -353,26 +453,13 @@ class SMPProductionService:
                 if price_without is None and price_with is not None:
                     price_without = price_with
                 smp_value = price_with if price_with is not None else price_without
-                demand_value = next(
-                    (val for key in DEMAND_KEYS if (val := _as_float(sample.get(key))) is not None),
-                    None,
-                )
-                if demand_value is None:
-                    demand_value = demand_lookup.get(timestamp)
-                # Net demand = gross demand − renewable generation.
-                # Renewables: prefer inlined in the SMP sample (rare), then
-                # the windowed lookup keyed at the SMP timestamp.
-                renewables_value = next(
-                    (val for key in RENEWABLE_KEYS if (val := _as_float(sample.get(key))) is not None),
-                    None,
-                )
-                if renewables_value is None:
-                    renewables_value = renewables_lookup.get(timestamp)
-                generation_value = (
-                    demand_value - (renewables_value or 0.0)
-                    if demand_value is not None
-                    else None
-                )
+                # ``net_demand`` here = total electricity generation =
+                # non_renewables + renewables + other, matching the pie chart.
+                # Pulled from the parallel production-mix lookup (NOGA primary,
+                # NZO fallback). We deliberately ignore any DEMAND_KEYS the
+                # SMP payload may carry — those are gross consumption, not
+                # what the client asked for.
+                generation_value = total_gen_lookup.get(timestamp)
 
                 if price_with is not None or price_without is not None:
                     smp_series.append(

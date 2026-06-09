@@ -98,16 +98,24 @@ class SMPProcessor:
     def process_smp_data(
         raw_data: List[Dict],
         include_samples: bool,
+        total_gen_lookup: Dict[str, float] | None = None,
+        # Legacy kwargs kept for transitional compatibility; ignored.
         demand_lookup: Dict[str, float] | None = None,
         renewables_lookup: Dict[str, float] | None = None,
     ) -> Dict:
         """
-        Return SMP price with/without constraints plus net demand averages for charts.
+        Return SMP price with/without constraints plus the parallel
+        electricity-generation series for charts.
 
-        ``net_demand`` = gross demand minus renewable generation. SMP
-        samples don't carry demand or renewables themselves, so both
-        come from the windowed lookups the caller built from the
-        demand/production-mix payload.
+        ``net_demand`` field now carries TOTAL ELECTRICITY GENERATION
+        (non-renewables + renewables + other), matching the production-mix
+        pie chart. Per client direction (Jun 2026) — see the long comment
+        in smp_production_service for history; this has flipped several
+        times. SMP samples don't carry this themselves, so the caller passes
+        a windowed total-generation lookup built from production_mix.
+
+        The field name ``net_demand`` is kept to preserve the FE contract,
+        but its meaning is "total generation".
         """
         days: List[Dict] = []
         if isinstance(raw_data, dict):
@@ -115,7 +123,7 @@ class SMPProcessor:
         else:
             days = raw_data or []
 
-        flattened = SMPProcessor._flatten(days, demand_lookup or {}, renewables_lookup or {})
+        flattened = SMPProcessor._flatten(days, total_gen_lookup or {})
         day_avg = SMPProcessor._aggregate(flattened, by="day")
         month_avg = SMPProcessor._aggregate(flattened, by="month")
 
@@ -151,15 +159,15 @@ class SMPProcessor:
     @staticmethod
     def _flatten(
         days: List[Dict],
-        demand_lookup: Dict[str, float],
-        renewables_lookup: Dict[str, float] | None = None,
+        total_gen_lookup: Dict[str, float],
     ) -> List[Dict]:
         """
-        Flatten NOGA daily payload into timestamped samples with price/net demand.
+        Flatten NOGA daily payload into timestamped samples with price plus
+        total electricity generation.
 
-        ``net_demand`` here = demand − renewables (per client direction).
+        ``net_demand`` field = sum of all generation categories (matches the
+        pie chart). NO subtraction is applied here. Per client direction.
         """
-        renewables_lookup = renewables_lookup or {}
         records: List[Dict] = []
         for day in days:
             date_str = day.get("date") or day.get("day") or ""
@@ -182,14 +190,7 @@ class SMPProcessor:
                     price_with = price_without
                 if price_without is None and price_with is not None:
                     price_without = price_with
-                demand_val = _get_first_float(sample, DEMAND_KEYS)
-                if demand_val is None:
-                    demand_val = demand_lookup.get(ts)
-                # Renewables: sample first (rare), then windowed lookup.
-                renewables_val = _get_first_float(sample, RENEWABLE_KEYS)
-                if renewables_val is None:
-                    renewables_val = renewables_lookup.get(ts)
-                net_demand = demand_val - (renewables_val or 0) if demand_val is not None else None
+                net_demand = total_gen_lookup.get(ts)
 
                 records.append(
                     {
