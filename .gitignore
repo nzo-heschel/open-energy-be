@@ -9,6 +9,7 @@ __pycache__/
 venv/
 .env
 .env.*
+!.env.example
 .vscode/
 .idea/
 energy_mix_today_20251128203232.xlsx

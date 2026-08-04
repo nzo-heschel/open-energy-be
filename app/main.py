@@ -75,12 +75,22 @@ async def internal_api_key_guard(request, call_next):
     return await call_next(request)
 
 
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 origins = [
     "https://open-energy-fe.vercel.app",
     "http://localhost:3000",
     "https://open-energy-be-vo4yi.ondigitalocean.app",
     "https://localhost:8000",
 ]
+if allowed_origins_env:
+    if allowed_origins_env.strip() == "*":
+        origins = ["*"]
+    else:
+        for origin in allowed_origins_env.split(","):
+            cleaned = origin.strip()
+            if cleaned and cleaned not in origins:
+                origins.append(cleaned)
+
 
 app.add_middleware(
     CORSMiddleware,
